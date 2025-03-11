@@ -1,2 +1,2 @@
 # htb-simple-gui
-htb-simple-gui
+![](htb-gui.png)
