@@ -499,9 +499,13 @@ class HTBGUI:
 	def on_machine_selected(self, event):
 		selected = self.machine_list.get()
 		self.current_machine_data = self.machine_dict.get(selected)
-		self.log_to_console(f"Selected machine: {selected}")
-		self.update_activity()
-		self.check_status()
+		if self.current_machine_data:
+			self.log_to_console(f"Selected: {selected}")
+			# Forzar actualización incluso si ya estaba seleccionada
+			self.check_status()
+			self.update_activity()
+		else:
+			self.set_default_status_values()
 
 	def update_activity(self):
 		# Ejecutar la solicitud en un hilo separado
@@ -646,36 +650,38 @@ class HTBGUI:
 	def check_status(self):
 		try:
 			if not self.current_machine_data:
+				self.set_default_status_values()
 				return
 				
 			machine_id = self.current_machine_data.get("id")
 			status = get_machine_status(machine_id)
 			
 			if status:
-				# Actualizar solo los campos relevantes
 				self.status_labels["name"].config(text=status.get("name", "N/A"))
 				self.status_labels["ip"].config(text=status.get("ip", "N/A"))
 				self.status_labels["type"].config(text=status.get("type", "N/A"))
-				self.status_labels["lab_server"].config(text="N/A")  # Campo eliminado
-				expires = status.get("expires_at", "N/A")
 				
-				# Manejar formato de fecha si es necesario
+				expires = status.get("expires_at", "N/A")
 				if expires and expires != "N/A":
 					try:
 						dt = datetime.strptime(expires, "%Y-%m-%dT%H:%M:%S.%fZ")
-						expires = dt.strftime("%d/%m/%Y %H:%M:%S")
+						self.status_labels["expires_at"].config(text=dt.strftime("%d/%m/%Y %H:%M:%S"))
 					except:
-						pass
-						
-				self.status_labels["expires_at"].config(text=expires)
+						self.status_labels["expires_at"].config(text=expires)
+				else:
+					self.status_labels["expires_at"].config(text="N/A")
+				
 				self.copy_ip_btn.state(['!disabled' if status.get("ip") != "N/A" else 'disabled'])
-				self.log_to_console("Status updated successfully")
 			else:
 				self.set_default_status_values()
 				
 		except Exception as e:
-			self.log_to_console(f"Error verifying status: {str(e)}", "error")
-
+			self.log_to_console(f"Status error: {str(e)}", "error")
+			self.set_default_status_values()
+	def set_default_status_values(self):
+		for label in self.status_labels.values():
+			label.config(text="N/A")
+		self.copy_ip_btn.state(['disabled'])
 	def submit_flag(self):
 		selected = self.machine_list.get()
 		if not selected:
