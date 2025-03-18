@@ -25,7 +25,7 @@ headers = {
 # Endpoints
 list_machines_url = "https://labs.hackthebox.com/api/v4/season/machines"
 activate_machine_url = "https://labs.hackthebox.com/api/v4/vm/spawn"
-status_machine_url = "https://labs.hackthebox.com/api/v4/machine/active"
+status_machine_url = "https://labs.hackthebox.com/api/v4/machine/profile"
 stop_machine_url = "https://labs.hackthebox.com/api/v4/vm/terminate"
 submit_flag_url = "https://labs.hackthebox.com/api/v4/machine/own"
 reset_machine_url = "https://labs.hackthebox.com/api/v4/vm/reset"
@@ -54,9 +54,17 @@ def stop_machine():
 	response = session.post(stop_machine_url, headers=headers, timeout=20)
 	return response.status_code == 200
 
-def get_machine_status():
-	response = session.get(status_machine_url, headers=headers, timeout=20)
-	return response.json().get("info", {}) if response.status_code == 200 else None
+def get_machine_status(machine_id):
+    response = session.get(f"{status_machine_url}/{machine_id}", headers=headers, timeout=20)
+    if response.status_code == 200:
+        data = response.json().get("info", {})
+        return {
+            "name": data.get("name", "N/A"),
+            "ip": data.get("ip", "N/A"),
+            "type": data.get("os", "N/A"),
+            "expires_at": data.get("playInfo", {}).get("expires_at", "N/A")
+        }
+    return None
 
 def submit_flag(machine_id, flag):
 	payload = {"machine_id": machine_id, "flag": flag}
@@ -380,7 +388,7 @@ class HTBGUI:
 			self.payload_text.config(state=tk.DISABLED)
 			
 		except Exception as e:
-			self.log(f"Error: {str(e)}")
+			self.log_to_console(f"Error: {str(e)}")
 	def setup_right_panel(self, parent):
 		status_frame = ttk.LabelFrame(parent, text="Machine Info")
 		status_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
@@ -637,43 +645,34 @@ class HTBGUI:
 
 	def check_status(self):
 		try:
-			status = get_machine_status()
+			if not self.current_machine_data:
+				return
+				
+			machine_id = self.current_machine_data.get("id")
+			status = get_machine_status(machine_id)
+			
 			if status:
+				# Actualizar solo los campos relevantes
 				self.status_labels["name"].config(text=status.get("name", "N/A"))
-				ip = status.get("ip", "N/A")
-				self.status_labels["ip"].config(text=ip)
+				self.status_labels["ip"].config(text=status.get("ip", "N/A"))
 				self.status_labels["type"].config(text=status.get("type", "N/A"))
-				self.status_labels["lab_server"].config(text=status.get("lab_server", "N/A"))
+				self.status_labels["lab_server"].config(text="N/A")  # Campo eliminado
 				expires = status.get("expires_at", "N/A")
-				if expires != "N/A":
+				
+				# Manejar formato de fecha si es necesario
+				if expires and expires != "N/A":
 					try:
-						dt = datetime.strptime(expires, "%Y-%m-%d %H:%M:%S")
+						dt = datetime.strptime(expires, "%Y-%m-%dT%H:%M:%S.%fZ")
 						expires = dt.strftime("%d/%m/%Y %H:%M:%S")
-					except Exception as e:
-						self.log_to_console(f"Date format error: {str(e)}", "error")
+					except:
+						pass
+						
 				self.status_labels["expires_at"].config(text=expires)
-				self.copy_ip_btn.state(['!disabled' if ip != "N/A" else 'disabled'])
+				self.copy_ip_btn.state(['!disabled' if status.get("ip") != "N/A" else 'disabled'])
 				self.log_to_console("Status updated successfully")
 			else:
-				if self.current_machine_data:
-					release_time_str = self.current_machine_data.get("release_time")
-					if release_time_str:
-						release_time = parse_htb_time(release_time_str)
-						remaining = self.time_until_release(release_time)
-						self.status_labels["expires_at"].config(text=f"{remaining}")
-					else:
-						self.status_labels["expires_at"].config(text="N/A")
-					
-					self.status_labels["name"].config(text=self.current_machine_data.get("name", "N/A"))
-				else:
-					self.status_labels["expires_at"].config(text="N/A")
+				self.set_default_status_values()
 				
-				self.status_labels["ip"].config(text="N/A")
-				self.status_labels["type"].config(text="N/A")
-				self.status_labels["lab_server"].config(text="N/A")
-				self.copy_ip_btn.state(['disabled'])
-				
-				self.log_to_console("No active machine", "warning")
 		except Exception as e:
 			self.log_to_console(f"Error verifying status: {str(e)}", "error")
 
