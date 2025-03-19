@@ -32,8 +32,8 @@ reset_machine_url = "https://labs.hackthebox.com/api/v4/vm/reset"
 activity_url = "https://labs.hackthebox.com/api/v4/machine/owns/top"
 
 session = requests.Session()
-# session.proxies = {"https": "http://127.0.0.1:8080"}
-# session.verify = False
+#session.proxies = {"https": "http://127.0.0.1:8080"}
+#session.verify = False
 
 def list_machines():
 	response = session.get(list_machines_url, headers=headers, timeout=20)
@@ -493,7 +493,6 @@ class HTBGUI:
 			self.activity_tree.heading(col, anchor=tk.CENTER)
 
 	def bind_events(self):
-		# Al cambiar la selección se actualiza activity y status
 		self.machine_list.bind("<<ComboboxSelected>>", self.on_machine_selected)
 
 	def on_machine_selected(self, event):
@@ -599,7 +598,6 @@ class HTBGUI:
 	def load_machines(self):
 		try:
 			machines = list_machines()
-			# Guardar todos los datos de la máquina en lugar de solo el ID
 			self.machine_dict = {m.get("name"): m for m in machines}
 			self.machine_list["values"] = list(self.machine_dict.keys())
 			if self.machine_list["values"]:
@@ -626,7 +624,8 @@ class HTBGUI:
 	def stop_machine(self):
 		if stop_machine():
 			self.log_to_console("Machine stopped")
-			self.check_status()
+			self.current_machine_data = None
+			self.set_default_status_values()
 			messagebox.showinfo("Success", "Machine stopped successfully")
 		else:
 			self.log_to_console("Failed to stop machine", "error")
@@ -682,6 +681,7 @@ class HTBGUI:
 		for label in self.status_labels.values():
 			label.config(text="N/A")
 		self.copy_ip_btn.state(['disabled'])
+		self.current_machine_data = None
 	def submit_flag(self):
 		selected = self.machine_list.get()
 		if not selected:
