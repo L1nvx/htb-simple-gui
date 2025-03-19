@@ -202,7 +202,7 @@ class HTBGUI:
         self.status_led.pack(side=tk.LEFT, padx=5)
 
         ttk.Button(auto_frame,
-                   text="Auto-Submit Flags",
+                   text="Auto-Submit Flag",
                    command=self.toggle_auto_submit,
                    style='TButton').pack(side=tk.RIGHT)
 
