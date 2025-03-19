@@ -1,4 +1,2 @@
 requests
 python-dotenv
-tk
-threading
