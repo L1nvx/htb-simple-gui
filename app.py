@@ -528,7 +528,6 @@ class HTBGUI:
             ("Machine Name:", "name"),
             ("IP Address:", "ip"),
             ("Type:", "type"),
-            ("Lab Server:", "lab_server"),
             ("Release:", "expires_at")
         ]
         self.status_labels = {}
