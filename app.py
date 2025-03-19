@@ -10,6 +10,7 @@ import base64
 from urllib.parse import quote
 import time
 import threading
+import netifaces
 
 load_dotenv()
 token = os.getenv("TOKEN")
@@ -37,6 +38,15 @@ session = requests.Session()
 # session.proxies = {"https": "http://127.0.0.1:8080"}
 # session.verify = False
 
+def get_tun0_ip():
+    try:
+        if 'tun0' in netifaces.interfaces():
+            addr = netifaces.ifaddresses('tun0').get(netifaces.AF_INET)
+            if addr:
+                return addr[0]['addr']
+    except Exception as e:
+        print(f"Error getting tun0 IP: {e}")
+    return "10.10.14.X"
 
 def list_machines():
     response = session.get(list_machines_url, headers=headers, timeout=20)
@@ -411,7 +421,7 @@ class HTBGUI:
             (widget for _, widget in rows)
 
         # Valores iniciales
-        self.payload_ip.insert(0, "10.10.14.X")
+        self.payload_ip.insert(0, get_tun0_ip())
         self.payload_port.insert(0, "1337")
         self.encoding_type.current(0)
 
@@ -776,9 +786,12 @@ class HTBGUI:
             self.machine_list["values"] = list(self.machine_dict.keys())
             if self.machine_list["values"]:
                 self.machine_list.current(0)
+            self.payload_ip.delete(0, tk.END)
+            self.payload_ip.insert(0, get_tun0_ip()) # Check TUN0 IP
             self.log_to_console(f"Loaded {len(machines)} machines")
         except Exception as e:
             self.log_to_console(f"Error loading machines: {str(e)}", "error")
+
 
     def spawn_machine(self):
         selected = self.machine_list.get()
