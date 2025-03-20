@@ -36,8 +36,8 @@ reset_machine_url = "https://labs.hackthebox.com/api/v4/vm/reset"
 activity_url = "https://labs.hackthebox.com/api/v4/machine/owns/top"
 
 session = requests.Session()
-session.proxies = {"https": "http://127.0.0.1:8080"}
-session.verify = False
+#session.proxies = {"https": "http://127.0.0.1:8080"}
+#session.verify = False
 
 
 def get_tun0_ip():
