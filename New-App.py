@@ -75,13 +75,13 @@ class HTBApiClient(QObject):
     def __init__(self, token):
         super().__init__()
 
-        proxy = QNetworkProxy()
-        proxy.setType(QNetworkProxy.HttpProxy)
-        proxy.setHostName("127.0.0.1")
-        proxy.setPort(8080)
+        # proxy = QNetworkProxy()
+        # proxy.setType(QNetworkProxy.HttpProxy)
+        # proxy.setHostName("127.0.0.1")
+        # proxy.setPort(8080)
 
         self.nam = QNetworkAccessManager()
-        self.nam.setProxy(proxy)
+        # self.nam.setProxy(proxy)
 
         self.ssl_config = QSslConfiguration.defaultConfiguration()
         self.ssl_config.setPeerVerifyMode(QSslSocket.VerifyNone)
