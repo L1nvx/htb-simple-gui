@@ -622,29 +622,19 @@ elif command -v script; then
 
     def _handle_reset_result(self, response):
         if response["success"]:
-            self._log_to_console("Máquina reiniciada exitosamente")
+            self._log_to_console("Machine successfully restarted")
             self._check_status()
         else:
             self._log_to_console(
-                f"Error al reiniciar: {response.get('error', 'Unknown error')}", error=True)
+                f"Error when restarting: {response.get('error', 'Unknown error')}", error=True)
 
     def _handle_submit_result(self, response):
         if response["success"]:
-            self._log_to_console("¡Flag aceptado!")
+            self._log_to_console("Flag accepted!")
             self.flag_entry.clear()
         else:
             self._log_to_console(
                 f"Error en flag: {response.get('error', 'Unknown error')}", error=True)
-
-    def _handle_submit_result(self, response):
-        if response["success"]:
-            self._log_to_console("¡Flag aceptado!")
-            QMessageBox.information(
-                self, "Éxito", response.get("message", "Flag válido"))
-        else:
-            self._log_to_console(
-                f"Error en flag: {response.get('error', 'Unknown error')}", error=True)
-
     def _setup_machine_info(self, layout):
         frame = QFrame()
         grid = QGridLayout(frame)
@@ -721,10 +711,10 @@ elif command -v script; then
         if ip != "N/A" or ip != "null" or ip != "" or ip != None:
             clipboard = QApplication.clipboard()
             clipboard.setText(ip)
-            self._log_to_console(f"IP copiada al portapapeles: {ip}")
+            self._log_to_console(f"IP copied to clipboard: {ip}")
         else:
             self._log_to_console(
-                "No hay IP disponible para copiar", error=True)
+                "No IP available for copying", error=True)
 
     def _update_payload_list(self):
         category = self.payload_category.currentText()
@@ -768,7 +758,7 @@ elif command -v script; then
 
     def _handle_stop_result(self, response):
         if response["success"]:
-            self._log_to_console(f"Máquina {response['machine_id']} detenida")
+            self._log_to_console(f"Machine {response['machine_id']} stopped")
             self._set_default_status()
         else:
             self._log_to_console(
@@ -782,7 +772,7 @@ elif command -v script; then
 
         machine_id = self.machine_dict[selected]["id"]
         self.api.reset_machine(machine_id)
-        self._log_to_console(f"Reiniciando máquina {selected}...")
+        self._log_to_console(f"Restarting machine {selected}...")
 
     def _update_release_timer(self):
         if self.current_machine_data:
