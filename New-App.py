@@ -25,6 +25,7 @@ from PySide6.QtCore import (
     QUrl, QEventLoop, QBuffer
 )
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PySide6.QtNetwork import QSslConfiguration, QSslSocket
 from PySide6.QtNetwork import QNetworkProxy, QSslConfiguration, QSslSocket
 load_dotenv()
 token = os.getenv("TOKEN")
@@ -70,18 +71,17 @@ class HTBApiClient(QObject):
     activity_loaded = Signal(list)
     machine_reset = Signal(dict)
     flag_submitted = Signal(dict)
-    flag_activity_loaded = Signal(list)
 
     def __init__(self, token):
         super().__init__()
 
-        #proxy = QNetworkProxy()
-        #proxy.setType(QNetworkProxy.HttpProxy)
-        #proxy.setHostName("127.0.0.1")
-        #proxy.setPort(8080)
+        # proxy = QNetworkProxy()
+        # proxy.setType(QNetworkProxy.HttpProxy)
+        # proxy.setHostName("127.0.0.1")
+        # proxy.setPort(8080)
 
         self.nam = QNetworkAccessManager()
-        #self.nam.setProxy(proxy)
+        # self.nam.setProxy(proxy)
 
         self.ssl_config = QSslConfiguration.defaultConfiguration()
         self.ssl_config.setPeerVerifyMode(QSslSocket.VerifyNone)
@@ -93,27 +93,10 @@ class HTBApiClient(QObject):
             "Accept": "application/json",
         }
 
-    def get_flag_activity(self, machine_id):
-        url = QUrl(f"{self.base_url}/machine/activity/{machine_id}")
-        request = QNetworkRequest(url)
-        self._configure_request(request)
-
-        reply = self.nam.get(request)
-        reply.finished.connect(lambda: self._handle_flag_activity(reply))
-
-    def _handle_flag_activity(self, reply):
-        try:
-            if reply.error() == QNetworkReply.NoError:
-                data = json.loads(reply.readAll().data())
-                self.flag_activity_loaded.emit(
-                    data.get("info", {}).get("activity", []))
-            else:
-                self.api_error.emit(
-                    f"Blood activity error: {reply.errorString()}")
-        except Exception as e:
-            self.api_error.emit(f"Blood activity parse error: {str(e)}")
-        finally:
-            reply.deleteLater()
+    def _configure_request(self, request):
+        request.setSslConfiguration(self.ssl_config)
+        for k, v in self.headers.items():
+            request.setRawHeader(k.encode(), v.encode())
 
     def reset_machine(self, machine_id):
         url = QUrl(f"{self.base_url}/vm/reset")
@@ -418,26 +401,6 @@ class HTBCommander(QMainWindow):
         super().__init__()
 
         self.api = HTBApiClient(token)
-        self.machine_dict = {}
-        self.current_machine_id = None
-        self.current_machine_data = None
-        self.auto_submit_enabled = False
-        self.last_flag = ""
-
-        self._setup_signal_connections()
-
-        self._setup_palette()
-        self._setup_ui()
-
-        self._setup_timers()
-
-        self._load_machines()
-        self._setup_clipboard_monitor()
-
-        self.status_led.setStyleSheet("color: #ff4444;")
-
-    def _setup_signal_connections(self):
-        """Configurar todas las conexiones de señales"""
         self.api.machines_loaded.connect(self._handle_machines_loaded)
         self.api.machine_spawned.connect(self._handle_spawn_result)
         self.api.machine_info_loaded.connect(self._update_status_labels)
@@ -446,53 +409,35 @@ class HTBCommander(QMainWindow):
         self.api.api_error.connect(self._handle_api_error)
         self.api.machine_reset.connect(self._handle_reset_result)
         self.api.flag_submitted.connect(self._handle_submit_result)
-        self.api.flag_activity_loaded.connect(self._update_flag_activity)
 
-    def _setup_timers(self):
-        """Configurar todos los timers"""
-
-        QTimer.singleShot(0, self._update_activity)
-        QTimer.singleShot(0, self._update_release_timer)
-
-        self.flag_activity_timer = QTimer()
-        self.flag_activity_timer.timeout.connect(self._refresh_flag_activity)
-        self.flag_activity_timer.start(10000)
-
-        self.status_check_timer = QTimer()
-        self.status_check_timer.timeout.connect(self._check_machine_status)
+        self.nam = QNetworkAccessManager()
+        self.machine_dict = {}
+        self.current_machine_data = None
+        self.auto_submit_enabled = False
+        self.last_flag = ""
+        self.animation_timer = None
+        self.clipboard_monitor = None
+        self.last_clipboard_text = ""
+        self.last_flag = ""
+        self.network_manager = NetworkManager()
+        self.status_check_timer = None
         self.status_check_attempts = 0
         self.max_status_attempts = 30
 
-    def _refresh_flag_activity(self):
-        """Actualizar la actividad de flags"""
-        if self.current_machine_id:
-            self.api.get_flag_activity(self.current_machine_id)
+        self.setWindowTitle("HTB Commander")
+        self.setMinimumSize(800, 600)
+        self._setup_palette()
+        self._setup_ui()
+        self.machine_combo.currentIndexChanged.connect(
+            self._on_machine_selected)
+        self._load_machines()
+        self._setup_clipboard_monitor()
 
-    def _on_machine_selected(self, index):
-        """Manejador de selección de máquina"""
-        selected = self.machine_combo.currentText()
-        if selected and selected in self.machine_dict:
-            self.current_machine_id = self.machine_dict[selected]["id"]
+        self.status_led.setStyleSheet("color: #ff4444;")
 
-            self.api.get_machine_info(self.current_machine_id)
-            self.api.get_machine_activity(self.current_machine_id)
-            self._refresh_flag_activity()
-
-            self.status_check_attempts = 0
-
-    def closeEvent(self, event):
-        """Manejador de cierre de aplicación"""
-
-        if self.flag_activity_timer.isActive():
-            self.flag_activity_timer.stop()
-        if self.status_check_timer.isActive():
-            self.status_check_timer.stop()
-
-        if self.clipboard_monitor:
-            self.clipboard_monitor.requestInterruption()
-            self.clipboard_monitor.wait()
-
-        super().closeEvent(event)
+        QTimer.singleShot(0, self._update_activity)
+        QTimer.singleShot(0, self._update_release_timer)
+        self.api.machine_status.connect(self._update_status_labels)
 
     def _setup_palette(self):
         palette = self.palette()
@@ -508,8 +453,8 @@ class HTBCommander(QMainWindow):
         palette.setColor(QPalette.Text, text_color)
         palette.setColor(QPalette.Button, panel_bg)
         palette.setColor(QPalette.ButtonText, text_color)
-        palette.setColor(QPalette.HighlightedText, QColor("#e0e0e0"))
-        palette.setColor(QPalette.Highlight, QColor("#4cc38a"))
+        palette.setColor(QPalette.Highlight, accent_color)
+        palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
         self.setPalette(palette)
 
     def _setup_ui(self):
@@ -666,171 +611,17 @@ elif command -v script; then
         frame_layout.addWidget(copy_btn)
 
         self._update_payload_list()
-        layout.addSpacing(15)
-        layout.addWidget(frame)
-        self._setup_flag_activity(layout)
-
-    def _setup_flag_activity(self, layout):
-        frame = QFrame()
-        frame.setFrameShape(QFrame.StyledPanel)
-        frame.setStyleSheet("""
-            QFrame {
-                background-color: #1e222a;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QLabel {
-                color: #e0e0e0;
-            }
-        """)
-
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(5, 5, 5, 5)
-
-        title = QLabel("📑 Recent Flag Submissions")
-        title.setFont(QFont("Iosevka Nerd Font", 10, QFont.Bold))
-        title.setStyleSheet("color: #e0e0e0; margin-bottom: 8px;")
-        frame_layout.addWidget(title)
-
-        self.flag_table = QTableWidget()
-        self.flag_table.setColumnCount(3)
-        self.flag_table.setHorizontalHeaderLabels(["USER", "TYPE", "TIME"])
-        self.flag_table.verticalHeader().setVisible(False)
-        self.flag_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.flag_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.flag_table.setShowGrid(False)
-        self.flag_table.setStyleSheet("""
-            QTableWidget {
-                background-color: #1e222a;
-                border: none;
-                font-size: 12px;
-                color: #e0e0e0;
-            }
-            QHeaderView::section {
-                background-color: #0f1117;
-                padding: 5px;
-                border: none;
-                font-weight: bold;
-                color: #e0e0e0;
-            }
-            QTableWidget::item {
-                padding: 5px;
-                color: #e0e0e0;
-            }
-            /* Scrollbar Vertical */
-            QScrollBar:vertical {
-                background: #1e222a;
-                width: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #2a2e36;
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #4cc38a;
-            }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                border: none;
-                background: none;
-            }
-            /* Scrollbar Horizontal */
-            QScrollBar:horizontal {
-                background: #1e222a;
-                height: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #2a2e36;
-                min-width: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #4cc38a;
-            }
-            QScrollBar::add-line:horizontal,
-            QScrollBar::sub-line:horizontal {
-                border: none;
-                background: none;
-            }
-        """)
-
-        self.flag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.flag_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents)
-        self.flag_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeToContents)
-
-        frame_layout.addWidget(self.flag_table)
         layout.addWidget(frame)
 
-    def _update_flag_activity(self, activity_data):
-
-        blood_entries = []
-        regular_entries = []
-
-        for entry in activity_data:
-            if entry.get("type") == "blood":
-                blood_entries.append(entry)
-            else:
-                regular_entries.append(entry)
-
-        def sort_by_date(entry):
-            try:
-                return datetime.strptime(entry.get("created_at", ""), "%Y-%m-%dT%H:%M:%S.%fZ")
-            except:
-                return datetime.min
-
-        regular_entries.sort(key=sort_by_date, reverse=True)
-
-        sorted_data = regular_entries + blood_entries
-
-        self.flag_table.setRowCount(len(sorted_data))
-
-        for row, entry in enumerate(sorted_data):
-
-            flag_type = entry.get("type", "user").capitalize()
-            if flag_type == "Blood":
-                flag_type = "🩸User" if entry.get(
-                    "blood_type") == "user" else "🩸Root"
-
-            raw_date = entry.get("created_at", "")
-            try:
-                date_obj = datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-                formatted_date = date_obj.strftime("%d/%m %H:%M")
-            except:
-                formatted_date = "N/A"
-
-            username = entry.get("user_name", "Unknown")[:15] + "..." if len(
-                entry.get("user_name", "")) > 15 else entry.get("user_name", "Unknown")
-
-            user_item = QTableWidgetItem(username)
-            type_item = QTableWidgetItem(flag_type)
-            time_item = QTableWidgetItem(formatted_date)
-
-            for item in [user_item, type_item, time_item]:
-                item.setForeground(QColor("#e0e0e0"))
-                item.setFont(QFont("Iosevka Nerd Font", 11))
-                item.setTextAlignment(Qt.AlignCenter)
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-
-            self.flag_table.setItem(row, 0, user_item)
-            self.flag_table.setItem(row, 1, type_item)
-            self.flag_table.setItem(row, 2, time_item)
-
-    def _create_table_item(self, text, color="#e0e0e0", alignment=Qt.AlignCenter, bold=False, font_size=12):
-        item = QTableWidgetItem(str(text))
-        item.setTextAlignment(alignment)
-        item.setForeground(QColor(color))
-
-        font = QFont("Iosevka Nerd Font", font_size)
-        font.setBold(bold)
-        item.setFont(font)
-
-        item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-        return item
+    def _on_machine_selected(self, index):
+        selected = self.machine_combo.currentText()
+        if selected and selected in self.machine_dict:
+            machine_id = self.machine_dict[selected]["id"]
+            self.api.get_machine_info(machine_id)
+            self.api.get_machine_activity(machine_id)
+            avatar_url = self.machine_dict[selected].get("avatar")
+            if avatar_url:
+                self._load_avatar(avatar_url)
 
     def _handle_reset_result(self, response):
         if response["success"]:
@@ -847,10 +638,15 @@ elif command -v script; then
         else:
             self._log_to_console(
                 f"Error en flag: {response.get('error', 'Unknown error')}", error=True)
-
     def _setup_machine_info(self, layout):
         frame = QFrame()
         grid = QGridLayout(frame)
+
+        # Se crea el avatar
+        self.avatar_label = QLabel()
+        self.avatar_label.setFixedSize(24, 24)  # resized al lado del name
+        self.avatar_label.setAlignment(Qt.AlignCenter)
+
 
         self.status_labels = {}
         fields = [
@@ -863,30 +659,39 @@ elif command -v script; then
         for label, key, row in fields:
             lbl = QLabel(label)
             lbl.setFont(QFont("Iosevka Nerd Font", 9, QFont.Bold))
-            value = QLabel("N/A")
-            value.setFont(QFont("Iosevka Nerd Font", 9))
-            value.setStyleSheet("color: #4cc38a;")
             grid.addWidget(lbl, row, 0)
-            grid.addWidget(value, row, 1)
+
+            if key == "name":
+                # layout horizontal con txt + img
+                name_container = QWidget()
+                name_layout = QHBoxLayout(name_container)
+                name_layout.setContentsMargins(0, 0, 0, 0)
+                name_layout.setSpacing(5)
+                name_layout.setAlignment(Qt.AlignLeft)
+
+                value = QLabel("N/A")
+                value.setFont(QFont("Iosevka Nerd Font", 9))
+                value.setStyleSheet("color: #4cc38a;")
+                
+                name_layout.addWidget(self.avatar_label) # avatar machine
+                name_layout.addWidget(value) # name machine
+                
+                grid.addWidget(name_container, row, 1)
+            else:
+                value = QLabel("N/A")
+                value.setFont(QFont("Iosevka Nerd Font", 9))
+                value.setStyleSheet("color: #4cc38a;")
+                grid.addWidget(value, row, 1)
+
             self.status_labels[key] = value
-
-        avatar_layout = QVBoxLayout()
-        avatar_layout.setSpacing(10)
-        avatar_layout.setAlignment(Qt.AlignCenter)
-
-        self.avatar_label = QLabel()
-        self.avatar_label.setFixedSize(80, 80)
-        self.avatar_label.setAlignment(Qt.AlignCenter)
-        avatar_layout.addWidget(self.avatar_label)
 
         self.copy_ip_btn = QPushButton("📋 Copiar IP")
         self.copy_ip_btn.setIconSize(QSize(20, 20))
         self.copy_ip_btn.setFixedWidth(120)
         self.copy_ip_btn.clicked.connect(self._copy_ip)
         self.copy_ip_btn.setEnabled(False)
-        avatar_layout.addWidget(self.copy_ip_btn, 0, Qt.AlignCenter)
 
-        grid.addLayout(avatar_layout, 0, 2, 4, 1)
+        grid.addWidget(self.copy_ip_btn, 0, 2)  # al lado del nombre
 
         flag_frame = QFrame()
         flag_layout = QHBoxLayout(flag_frame)
@@ -903,71 +708,15 @@ elif command -v script; then
         splitter = QSplitter(Qt.Vertical)
 
         self.activity_table = QTableWidget()
-        self.activity_table.setStyleSheet("""
-            QTableWidget {
-                background-color: #1e222a;
-                color: #e0e0e0;
-                border: none;
-                font-size: 12px;
-            }
-            QHeaderView::section {
-                background-color: #0f1117;
-                color: #e0e0e0;  /* Cambiado de #4cc38a a blanco */
-                padding: 8px;
-                border: none;
-                font-weight: bold;
-                font-family: "Iosevka Nerd Font";
-            }
-            QTableWidget::item {
-                padding: 5px;
-            }
-            QTableWidget::item:hover {
-                background-color: #2a2e36;
-            }
-            /* Scrollbar styles igual que en la nueva tabla */
-            QScrollBar:vertical {
-                background: #1e222a;
-                width: 10px;
-            }
-            QScrollBar::handle:vertical {
-                background: #2a2e36;
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                background: none;
-            }
-        """)
-
         self.activity_table.verticalHeader().setVisible(False)
         self.activity_table.setColumnCount(6)
         self.activity_table.setHorizontalHeaderLabels(
             ["Pos", "Name", "Rank", "User Time", "Root Time", "Blood"]
         )
-        self.activity_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
-        self.activity_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeToContents)
-        self.activity_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.activity_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeToContents)
-        self.activity_table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeToContents)
-        self.activity_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeToContents)
-        self.activity_table.horizontalHeader().setSectionResizeMode(
-            5, QHeaderView.ResizeToContents)
+        self.activity_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         self.console = QTextBrowser()
-        self.console.setStyleSheet("""
-            QTextBrowser {
-                background-color: #1e222a;
-                color: #e0e0e0;
-                border: none;
-                font-family: "Iosevka Nerd Font";
-                font-size: 12px;
-            }
-        """)
+        self.console.setFont(QFont("Consolas", 8))
 
         splitter.addWidget(self.activity_table)
         splitter.addWidget(self.console)
@@ -977,7 +726,7 @@ elif command -v script; then
 
     def _copy_ip(self):
         ip = self.status_labels["ip"].text()
-        if ip not in ["N/A", "null", "", None]:
+        if ip != "N/A" or ip != "null" or ip != "" or ip != None:
             clipboard = QApplication.clipboard()
             clipboard.setText(ip)
             self._log_to_console(f"IP copied to clipboard: {ip}")
@@ -1085,7 +834,14 @@ elif command -v script; then
 
     def _handle_machines_loaded(self, machines):
         try:
-            self.machine_dict = {m["name"]: m for m in machines}
+            self.machine_dict = {}
+            for m in machines:
+                name = m["name"]
+                avatar_url = "https://labs.hackthebox.com" + m.get("avatar", "")
+                self.machine_dict[name] = {
+                    "id": m["id"],
+                    "avatar": avatar_url
+                }
             self.machine_combo.clear()
             self.machine_combo.addItems(self.machine_dict.keys())
 
@@ -1203,7 +959,7 @@ elif command -v script; then
         pixmap = QPixmap()
         pixmap.loadFromData(data)
         self.avatar_label.setPixmap(pixmap.scaled(
-            50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.avatar_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def _start_animation(self, text):
         self.animation_text = text
@@ -1258,45 +1014,28 @@ elif command -v script; then
 
     def _update_activity_table(self, activity_data):
         self.activity_table.setRowCount(len(activity_data))
-
         for row, entry in enumerate(activity_data):
-
-            username = entry.get("name", "Unknown")
-            if len(username) > 15:
-                username = username[:13] + "..."
-
-            user_time = entry.get("user_own_time", "").replace(
-                "H", "h ").replace("M", "m ")
-            root_time = entry.get("root_own_time", "").replace(
-                "H", "h ").replace("M", "m ")
-
             blood = ""
-            if entry.get("is_user_blood"):
+            if entry.get("is_user_blood", False):
                 blood += "🩸"
-            if entry.get("is_root_blood"):
-                blood += "💀"
+            if entry.get("is_root_blood", False):
+                blood += "🩸"
 
             items = [
-                QTableWidgetItem(str(entry.get("position", "-"))),
-                QTableWidgetItem(username),
-                QTableWidgetItem(entry.get("rank_text", "-")),
-                QTableWidgetItem(user_time),
-                QTableWidgetItem(root_time),
-                QTableWidgetItem(blood)
+                str(entry.get("position", "-")),
+                entry.get("name", "Unknown")[
+                    :15] + "..." if len(entry.get("name", "")) > 15 else entry.get("name", "Unknown"),
+                entry.get("rank_text", "-"),
+                entry.get("user_own_time", "0H 00M 00S").replace(
+                    "H", "H ").replace("M", "M "),
+                entry.get("root_own_time", "0H 00M 00S").replace(
+                    "H", "H ").replace("M", "M "),
+                blood
             ]
 
-            for item in items:
-                item.setForeground(self.palette().text())
-                item.setFont(QFont("Iosevka Nerd Font", 11))
+            for col, text in enumerate(items):
+                item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-
-            if entry.get("is_user_blood"):
-                items[-1].setForeground(QColor("#ff4444"))
-            if entry.get("is_root_blood"):
-                items[-1].setForeground(QColor("#4cc38a"))
-
-            for col, item in enumerate(items):
                 self.activity_table.setItem(row, col, item)
 
     def _toggle_auto_submit(self):
@@ -1333,6 +1072,12 @@ elif command -v script; then
             f"<span style='color:{color}'> > {escape(message)}</span>")
         self.console.verticalScrollBar().setValue(
             self.console.verticalScrollBar().maximum())
+
+    def closeEvent(self, event):
+        if self.clipboard_monitor:
+            self.clipboard_monitor.requestInterruption()
+            self.clipboard_monitor.wait()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":
