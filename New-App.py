@@ -26,6 +26,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtNetwork import QNetworkProxy, QSslConfiguration, QSslSocket
+
 load_dotenv()
 token = os.getenv("TOKEN")
 
@@ -423,7 +424,8 @@ class HTBCommander(QMainWindow):
         self.current_machine_data = None
         self.auto_submit_enabled = False
         self.last_flag = ""
-
+        self.animation_timer = None
+        
         self._setup_signal_connections()
 
         self._setup_palette()
@@ -473,24 +475,32 @@ class HTBCommander(QMainWindow):
         selected = self.machine_combo.currentText()
         if selected and selected in self.machine_dict:
             self.current_machine_id = self.machine_dict[selected]["id"]
-
+            
+            # Limpiar datos anteriores
+            self._set_default_status()  # <--- Limpiar labels
+            self.flag_table.setRowCount(0)  # <--- Limpiar tabla de flags
+            self.activity_table.setRowCount(0)  # <--- Limpiar tabla de actividad
+            
+            # Cargar datos de la nueva máquina
             self.api.get_machine_info(self.current_machine_id)
             self.api.get_machine_activity(self.current_machine_id)
             self._refresh_flag_activity()
-
+            
+            # Cargar avatar si existe
+            machine_data = self.machine_dict[selected]
+            if "avatar_url" in machine_data:
+                self._load_avatar(machine_data["avatar_url"])  # <--- Asegúrate de tener este método
+            
             self.status_check_attempts = 0
 
     def closeEvent(self, event):
         """Manejador de cierre de aplicación"""
-
+        if hasattr(self, 'clipboard_timer') and self.clipboard_timer.isActive():
+            self.clipboard_timer.stop()
         if self.flag_activity_timer.isActive():
             self.flag_activity_timer.stop()
         if self.status_check_timer.isActive():
             self.status_check_timer.stop()
-
-        if self.clipboard_monitor:
-            self.clipboard_monitor.requestInterruption()
-            self.clipboard_monitor.wait()
 
         super().closeEvent(event)
 
@@ -574,7 +584,7 @@ class HTBCommander(QMainWindow):
         auto_btn.clicked.connect(self._toggle_auto_submit)
         auto_layout.addWidget(auto_btn)
         frame_layout.addWidget(auto_frame)
-
+        self.machine_combo.currentIndexChanged.connect(self._on_machine_selected)
         layout.addWidget(frame)
 
     def _setup_payload_generator(self, layout):
@@ -1088,17 +1098,16 @@ elif command -v script; then
             self.machine_dict = {m["name"]: m for m in machines}
             self.machine_combo.clear()
             self.machine_combo.addItems(self.machine_dict.keys())
-
+            
             if self.machine_combo.count() > 0:
                 self.machine_combo.setCurrentIndex(0)
-                self._on_machine_selected(0)
-
+                self._on_machine_selected(0)  # Forzar carga inicial
+            
             self.payload_ip.setText(get_tun0_ip())
             self._log_to_console(f"Loaded {len(machines)} machines")
-
+        
         except Exception as e:
-            self._log_to_console(
-                f"Error loading machines: {str(e)}", error=True)
+            self._log_to_console(f"Error loading machines: {str(e)}", error=True)
 
     def _handle_machine_action(self, action):
         if action == "⟳ Refresh":
@@ -1190,14 +1199,24 @@ elif command -v script; then
         self.api.get_machine_activity(machine_id)
 
     def _load_avatar(self, url):
+        """Carga la imagen del avatar desde la URL"""
         if not url:
+            self.avatar_label.clear()
             return
-
-        full_url = urljoin("https://labs.hackthebox.com", url)
-        self.network_manager.get(full_url)
-        self.network_manager.finished.connect(self._update_avatar)
-        self.network_manager.error.connect(
-            lambda e: self._log_to_console(f"Avatar error: {e}", error=True))
+        
+        network_manager = QNetworkAccessManager()
+        request = QNetworkRequest(QUrl(url))
+        reply = network_manager.get(request)
+        
+        def handle_reply():
+            if reply.error() == QNetworkReply.NoError:
+                data = reply.readAll()
+                pixmap = QPixmap()
+                pixmap.loadFromData(data)
+                self.avatar_label.setPixmap(pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            reply.deleteLater()
+        
+        reply.finished.connect(handle_reply)
 
     def _update_avatar(self, data):
         pixmap = QPixmap()
