@@ -5,10 +5,6 @@
 
 Unofficial application to interact with machines through the HTB API.
 
-![HTB GUI Screenshot](app-gui.png)
-
-OR
-
 ![HTB GUI Screenshot](app-gui2.png)
 
 ## Key Features 🔥
