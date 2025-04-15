@@ -27,6 +27,17 @@ from PySide6.QtCore import (
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtNetwork import QNetworkProxy, QSslConfiguration, QSslSocket
 
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath, QPixmap, QFontMetrics
+from PySide6.QtWidgets import (
+    QWidget,
+    QHBoxLayout,
+    QLabel,
+    QTableWidgetItem,
+    QHeaderView,
+)
+
+
 load_dotenv()
 token = os.getenv("TOKEN")
 
@@ -72,6 +83,7 @@ class HTBApiClient(QObject):
     machine_reset = Signal(dict)
     flag_submitted = Signal(dict)
     flag_activity_loaded = Signal(list)
+    avatar_loaded = Signal(int, QByteArray)
 
     def __init__(self, token):
         super().__init__()
@@ -93,6 +105,22 @@ class HTBApiClient(QObject):
             "User-Agent": "HTBCommander/1.0",
             "Accept": "application/json",
         }
+
+    def get_avatar(self, user_id, avatar_path):
+        url = f"https://labs.hackthebox.com{avatar_path}"
+        request = QNetworkRequest(QUrl(url))
+        self._configure_request(request)
+
+        reply = self.nam.get(request)
+        reply.user_id = user_id
+        reply.finished.connect(lambda: self._handle_avatar_reply(reply))
+
+    def _handle_avatar_reply(self, reply):
+        user_id = reply.user_id
+        if reply.error() == QNetworkReply.NoError:
+            data = reply.readAll()
+            self.avatar_loaded.emit(user_id, data)
+        reply.deleteLater()
 
     def get_flag_activity(self, machine_id):
         url = QUrl(f"{self.base_url}/machine/activity/{machine_id}")
@@ -425,7 +453,7 @@ class HTBCommander(QMainWindow):
         self.auto_submit_enabled = False
         self.last_flag = ""
         self.animation_timer = None
-
+        self.avatar_labels = {}
         self._setup_signal_connections()
 
         self._setup_palette()
@@ -449,6 +477,17 @@ class HTBCommander(QMainWindow):
         self.api.machine_reset.connect(self._handle_reset_result)
         self.api.flag_submitted.connect(self._handle_submit_result)
         self.api.flag_activity_loaded.connect(self._update_flag_activity)
+        self.api.avatar_loaded.connect(self._handle_avatar_loaded)
+
+    def _handle_avatar_loaded(self, user_id, image_data):
+        if user_id in self.avatar_labels:
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+            self.avatar_labels[user_id].setPixmap(pixmap.scaled(
+                24, 24,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            ))
 
     def _setup_timers(self):
         """Configurar todos los timers"""
@@ -1231,11 +1270,24 @@ elif command -v script; then
 
         reply.finished.connect(handle_reply)
 
-    def _update_avatar(self, data):
-        pixmap = QPixmap()
-        pixmap.loadFromData(data)
-        self.avatar_label.setPixmap(pixmap.scaled(
-            50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    def _update_avatar(self, user_id, image_data):
+        if user_id in self.avatar_labels:
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data)
+
+            circular_pixmap = QPixmap(40, 40)
+            circular_pixmap.fill(Qt.transparent)
+
+            painter = QPainter(circular_pixmap)
+            painter.setRenderHints(
+                QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+            path = QPainterPath()
+            path.addEllipse(0, 0, 40, 40)
+            painter.setClipPath(path)
+            painter.drawPixmap(0, 0, 40, 40, pixmap)
+            painter.end()
+
+            self.avatar_labels[user_id].setPixmap(circular_pixmap)
 
     def _start_animation(self, text):
         self.animation_text = text
@@ -1288,48 +1340,119 @@ elif command -v script; then
         except Exception as e:
             self._log_to_console(f"Activity error: {str(e)}", error=True)
 
+    def _safe_clear_table(self, table_widget):
+        for row in range(table_widget.rowCount()):
+            for col in range(table_widget.columnCount()):
+                widget = table_widget.cellWidget(row, col)
+                if widget:
+                    widget.setParent(None)
+                    table_widget.removeCellWidget(row, col)
+        table_widget.clearContents()
+
     def _update_activity_table(self, activity_data):
-        self.activity_table.setRowCount(len(activity_data))
+        self.avatar_labels = {}
+
+        self.activity_table.blockSignals(True)
+        self.activity_table.setUpdatesEnabled(False)
+
+        self._safe_clear_table(self.activity_table)
+
+        if self.activity_table.rowCount() != len(activity_data):
+            self.activity_table.setRowCount(len(activity_data))
+
+        if hasattr(self.api, 'pending_avatar_requests'):
+            for reply in self.api.pending_avatar_requests:
+                reply.abort()
+                reply.deleteLater()
+            self.api.pending_avatar_requests = []
+
+        self.activity_table.setShowGrid(False)
+        self.activity_table.verticalHeader().setVisible(False)
+        self.activity_table.verticalHeader().setDefaultSectionSize(48)
 
         for row, entry in enumerate(activity_data):
+            if not entry or not isinstance(entry, dict):
+                continue
 
-            username = entry.get("name", "Unknown")
-            if len(username) > 15:
-                username = username[:13] + "..."
+            try:
+                user_id = entry.get("id")
+                if not user_id:
+                    continue
 
-            user_time = entry.get("user_own_time", "").replace(
-                "H", "h ").replace("M", "m ")
-            root_time = entry.get("root_own_time", "").replace(
-                "H", "h ").replace("M", "m ")
+                name_widget = QWidget()
+                layout = QHBoxLayout(name_widget)
+                layout.setContentsMargins(4, 2, 4, 2)
+                layout.setSpacing(6)
 
-            blood = ""
-            if entry.get("is_user_blood"):
-                blood += "🩸"
-            if entry.get("is_root_blood"):
-                blood += "🩸"
+                avatar_label = QLabel()
+                avatar_label.setFixedSize(40, 40)
+                avatar_label.setProperty("user_id", user_id)
+                self.avatar_labels[user_id] = avatar_label
 
-            items = [
-                QTableWidgetItem(str(entry.get("position", "-"))),
-                QTableWidgetItem(username),
-                QTableWidgetItem(entry.get("rank_text", "-")),
-                QTableWidgetItem(user_time),
-                QTableWidgetItem(root_time),
-                QTableWidgetItem(blood)
-            ]
+                name_label = QLabel()
+                font = name_label.font()
+                font_metrics = QFontMetrics(font)
+                elided_text = font_metrics.elidedText(
+                    entry.get("name", "Unknown"), Qt.ElideRight, 200)
+                name_label.setText(elided_text)
+                name_label.setStyleSheet("color: white;")
+                name_label.setSizePolicy(
+                    QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-            for item in items:
-                item.setForeground(self.palette().text())
-                item.setFont(QFont("Iosevka Nerd Font", 11))
-                item.setTextAlignment(Qt.AlignCenter)
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+                layout.addWidget(avatar_label)
+                layout.addWidget(name_label)
+                self.activity_table.setCellWidget(row, 1, name_widget)
 
-            if entry.get("is_user_blood"):
-                items[-1].setForeground(QColor("#ff4444"))
-            if entry.get("is_root_blood"):
-                items[-1].setForeground(QColor("#4cc38a"))
+                if row < self.activity_table.rowCount():
+                    avatar_path = entry.get("avatar", "")
+                    if avatar_path:
+                        self.api.get_avatar(user_id, avatar_path)
 
-            for col, item in enumerate(items):
-                self.activity_table.setItem(row, col, item)
+                columns = [
+                    ("position", "-"),
+                    ("rank_text", "-"),
+                    ("user_own_time", "0h 0m"),
+                    ("root_own_time", "0h 0m")
+                ]
+
+                for col_idx, (key, default) in enumerate(columns):
+                    if col_idx == 0:
+                        value = str(entry.get(key, default))
+                        item = QTableWidgetItem(value)
+                        item.setForeground(QColor("white"))
+                        item.setTextAlignment(Qt.AlignCenter)
+                        self.activity_table.setItem(row, 0, item)
+                        continue
+
+                    value = str(entry.get(key, default))
+                    if "own_time" in key:
+                        value = value.replace("H", "h ").replace("M", "m ")
+
+                    item = QTableWidgetItem(value)
+                    item.setForeground(QColor("white"))
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.activity_table.setItem(row, col_idx + 1, item)
+
+                blood_item = QTableWidgetItem()
+                blood_text = "\U0001FA78" * \
+                    sum([entry.get("is_user_blood", False),
+                        entry.get("is_root_blood", False)])
+                blood_color = "#ff4444" if entry.get(
+                    "is_user_blood") else "#4cc38a" if entry.get("is_root_blood") else "#e0e0e0"
+                blood_item.setForeground(QColor(blood_color))
+                blood_item.setText(blood_text)
+                blood_item.setTextAlignment(Qt.AlignCenter)
+                self.activity_table.setItem(row, 5, blood_item)
+
+            except Exception as e:
+                print(f"Error en fila {row}: {str(e)}")
+                continue
+
+        self.activity_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        # self.activity_table.resizeColumnsToContents()
+        self.activity_table.viewport().update()
+        self.activity_table.setUpdatesEnabled(True)
+        self.activity_table.blockSignals(False)
 
     def _toggle_auto_submit(self):
         self.auto_submit_enabled = not self.auto_submit_enabled
