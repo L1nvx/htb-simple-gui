@@ -549,12 +549,12 @@ class HTBCommander(QMainWindow):
     def _setup_machine_control(self, layout):
         frame = QFrame()
         self.machine_combo = QComboBox()
-        self.machine_combo.setFont(QFont("Iosevka Nerd Font", 9))
+        self.machine_combo.setFont(QFont("Iosevka Nerd Font", 12))
 
         frame_layout = QVBoxLayout(frame)
 
         title = QLabel("Machines Control")
-        title.setFont(QFont("Iosevka Nerd Font", 10, QFont.Bold))
+        title.setFont(QFont("Iosevka Nerd Font", 16, QFont.Bold))
         frame_layout.addWidget(title)
 
         frame_layout.addWidget(self.machine_combo)
@@ -562,7 +562,7 @@ class HTBCommander(QMainWindow):
         controls = ["⟳ Refresh", "▶ Spawn", "⏹ Stop", "🔄 Reset"]
         for text in controls:
             btn = QPushButton(text)
-            btn.setFont(QFont("Iosevka Nerd Font", 9))
+            btn.setFont(QFont("Iosevka Nerd Font", 12))
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(partial(self._handle_machine_action, text))
             btn_layout.addWidget(btn)
@@ -577,7 +577,7 @@ class HTBCommander(QMainWindow):
         auto_layout.addWidget(self.status_led)
 
         auto_btn = QPushButton("Auto-Submit Flag")
-        auto_btn.setFont(QFont("Iosevka Nerd Font", 9))
+        auto_btn.setFont(QFont("Iosevka Nerd Font", 12))
         auto_btn.clicked.connect(self._toggle_auto_submit)
         auto_layout.addWidget(auto_btn)
         frame_layout.addWidget(auto_frame)
@@ -590,7 +590,7 @@ class HTBCommander(QMainWindow):
         frame_layout = QVBoxLayout(frame)
 
         title = QLabel("Payload Generator")
-        title.setFont(QFont("Iosevka Nerd Font", 10, QFont.Bold))
+        title.setFont(QFont("Iosevka Nerd Font", 16, QFont.Bold))
         frame_layout.addWidget(title)
 
         self.payload_category = QComboBox()
@@ -649,7 +649,7 @@ elif command -v script; then
         for label, widget in form_items:
             row = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setFont(QFont("Iosevka Nerd Font", 9))
+            lbl.setFont(QFont("Iosevka Nerd Font", 12))
             row.addWidget(lbl)
             row.addWidget(widget)
             frame_layout.addLayout(row)
@@ -660,16 +660,16 @@ elif command -v script; then
         self.encoding_combo.currentIndexChanged.connect(self._generate_payload)
 
         preview_label = QLabel("Preview:")
-        preview_label.setFont(QFont("Iosevka Nerd Font", 9, QFont.Bold))
+        preview_label.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
         frame_layout.addWidget(preview_label)
 
         self.payload_text = QTextEdit()
-        self.payload_text.setFont(QFont("Consolas", 9))
+        self.payload_text.setFont(QFont("Consolas", 14))
         self.payload_text.setReadOnly(True)
         frame_layout.addWidget(self.payload_text)
 
         copy_btn = QPushButton("📋 Copy Payload")
-        copy_btn.setFont(QFont("Iosevka Nerd Font", 9))
+        copy_btn.setFont(QFont("Iosevka Nerd Font", 15))
         copy_btn.clicked.connect(self._copy_payload)
         frame_layout.addWidget(copy_btn)
 
@@ -696,7 +696,7 @@ elif command -v script; then
         frame_layout.setContentsMargins(5, 5, 5, 5)
 
         title = QLabel("📑 Recent Flag Submissions")
-        title.setFont(QFont("Iosevka Nerd Font", 10, QFont.Bold))
+        title.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
         title.setStyleSheet("color: #e0e0e0; margin-bottom: 8px;")
         frame_layout.addWidget(title)
 
@@ -820,7 +820,7 @@ elif command -v script; then
 
             for item in [user_item, type_item, time_item]:
                 item.setForeground(QColor("#e0e0e0"))
-                item.setFont(QFont("Iosevka Nerd Font", 11))
+                item.setFont(QFont("Iosevka Nerd Font", 12))
                 item.setTextAlignment(Qt.AlignCenter)
                 item.setFlags(item.flags() ^ Qt.ItemIsEditable)
 
@@ -870,9 +870,9 @@ elif command -v script; then
 
         for label, key, row in fields:
             lbl = QLabel(label)
-            lbl.setFont(QFont("Iosevka Nerd Font", 9, QFont.Bold))
+            lbl.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
             value = QLabel("N/A")
-            value.setFont(QFont("Iosevka Nerd Font", 9))
+            value.setFont(QFont("Iosevka Nerd Font", 12))
             value.setStyleSheet("color: #4cc38a;")
             grid.addWidget(lbl, row, 0)
             grid.addWidget(value, row, 1)
@@ -1306,7 +1306,7 @@ elif command -v script; then
             if entry.get("is_user_blood"):
                 blood += "🩸"
             if entry.get("is_root_blood"):
-                blood += "💀"
+                blood += "🩸"
 
             items = [
                 QTableWidgetItem(str(entry.get("position", "-"))),
