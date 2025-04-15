@@ -479,16 +479,6 @@ class HTBCommander(QMainWindow):
         self.api.flag_activity_loaded.connect(self._update_flag_activity)
         self.api.avatar_loaded.connect(self._handle_avatar_loaded)
 
-    def _handle_avatar_loaded(self, user_id, image_data):
-        if user_id in self.avatar_labels:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            self.avatar_labels[user_id].setPixmap(pixmap.scaled(
-                24, 24,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            ))
-
     def _setup_timers(self):
         """Configurar todos los timers"""
 
@@ -746,6 +736,7 @@ elif command -v script; then
         self.flag_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.flag_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.flag_table.setShowGrid(False)
+
         self.flag_table.setStyleSheet("""
             QTableWidget {
                 background-color: #1e222a;
@@ -762,13 +753,10 @@ elif command -v script; then
             }
             QTableWidget::item {
                 padding: 5px;
-                color: #e0e0e0;
             }
-            /* Scrollbar Vertical */
             QScrollBar:vertical {
                 background: #1e222a;
                 width: 10px;
-                margin: 0px;
             }
             QScrollBar::handle:vertical {
                 background: #2a2e36;
@@ -778,30 +766,6 @@ elif command -v script; then
             QScrollBar::handle:vertical:hover {
                 background: #4cc38a;
             }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                border: none;
-                background: none;
-            }
-            /* Scrollbar Horizontal */
-            QScrollBar:horizontal {
-                background: #1e222a;
-                height: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #2a2e36;
-                min-width: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #4cc38a;
-            }
-            QScrollBar::add-line:horizontal,
-            QScrollBar::sub-line:horizontal {
-                border: none;
-                background: none;
-            }
         """)
 
         self.flag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -809,73 +773,96 @@ elif command -v script; then
             1, QHeaderView.ResizeToContents)
         self.flag_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeToContents)
+        self.flag_table.verticalHeader().setDefaultSectionSize(40)
 
         frame_layout.addWidget(self.flag_table)
         layout.addWidget(frame)
 
     def _update_flag_activity(self, activity_data):
+        self.flag_table.setRowCount(len(activity_data))
 
-        blood_entries = []
-        regular_entries = []
+        for row, entry in enumerate(activity_data):
+            user_widget = QWidget()
+            user_layout = QHBoxLayout(user_widget)
+            user_layout.setContentsMargins(8, 2, 8, 2)
+            user_layout.setSpacing(10)
+            user_layout.setAlignment(Qt.AlignVCenter)
 
-        for entry in activity_data:
-            if entry.get("type") == "blood":
-                blood_entries.append(entry)
+            avatar_label = QLabel()
+            avatar_label.setFixedSize(40, 40)
+            avatar_label.setAlignment(Qt.AlignCenter)
+            self.avatar_labels[entry["user_id"]] = avatar_label
+
+            if entry.get("user_avatar"):
+                self.api.get_avatar(entry["user_id"], entry["user_avatar"])
+
+            name_label = QLabel(entry["user_name"])
+            name_label.setStyleSheet("""
+                QLabel {
+                    color: #e0e0e0;
+                    font-size: 12px;
+                    padding-left: 5px;
+                }
+            """)
+            name_label.setSizePolicy(
+                QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+            user_layout.addWidget(avatar_label)
+            user_layout.addWidget(name_label)
+            user_layout.addStretch()
+
+            if entry.get("blood_type") == "root":
+                flag_type = "🩸 Root"
+            elif entry.get("blood_type") == "user":
+                flag_type = "🩸 User"
             else:
-                regular_entries.append(entry)
+                flag_type = entry.get("type", "N/A")
 
-        def sort_by_date(entry):
             try:
-                return datetime.strptime(entry.get("created_at", ""), "%Y-%m-%dT%H:%M:%S.%fZ")
+                dt = datetime.strptime(
+                    entry["created_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                time_str = dt.strftime("%H:%M")
             except:
-                return datetime.min
+                time_str = "N/A"
 
-        regular_entries.sort(key=sort_by_date, reverse=True)
+            self.flag_table.setCellWidget(row, 0, user_widget)
+            self.flag_table.setItem(row, 1, self._create_table_item(flag_type))
+            self.flag_table.setItem(row, 2, self._create_table_item(time_str))
 
-        sorted_data = regular_entries + blood_entries
+        self.flag_table.verticalHeader().setDefaultSectionSize(40)
+        self.flag_table.resizeRowsToContents()
 
-        self.flag_table.setRowCount(len(sorted_data))
+    def _handle_avatar_loaded(self, user_id, image_data):
+        if user_id in self.avatar_labels:
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(image_data):
+                print(f"[!] Falló al cargar avatar de {user_id}")
+                return
 
-        for row, entry in enumerate(sorted_data):
+            target_size = 40
 
-            flag_type = entry.get("type", "user").capitalize()
-            if flag_type == "Blood":
-                flag_type = "🩸User" if entry.get(
-                    "blood_type") == "user" else "🩸Root"
+            scaled_pix = pixmap.scaled(
+                target_size, target_size,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
 
-            raw_date = entry.get("created_at", "")
-            try:
-                date_obj = datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-                formatted_date = date_obj.strftime("%d/%m %H:%M")
-            except:
-                formatted_date = "N/A"
+            final_pixmap = QPixmap(target_size, target_size)
+            final_pixmap.fill(Qt.transparent)
 
-            username = entry.get("user_name", "Unknown")[:15] + "..." if len(
-                entry.get("user_name", "")) > 15 else entry.get("user_name", "Unknown")
+            painter = QPainter(final_pixmap)
+            x_offset = (target_size - scaled_pix.width()) // 2
+            y_offset = (target_size - scaled_pix.height()) // 2
+            painter.drawPixmap(x_offset, y_offset, scaled_pix)
+            painter.end()
 
-            user_item = QTableWidgetItem(username)
-            type_item = QTableWidgetItem(flag_type)
-            time_item = QTableWidgetItem(formatted_date)
+            self.avatar_labels[user_id].setPixmap(final_pixmap)
 
-            for item in [user_item, type_item, time_item]:
-                item.setForeground(QColor("#e0e0e0"))
-                item.setFont(QFont("Iosevka Nerd Font", 12))
-                item.setTextAlignment(Qt.AlignCenter)
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-
-            self.flag_table.setItem(row, 0, user_item)
-            self.flag_table.setItem(row, 1, type_item)
-            self.flag_table.setItem(row, 2, time_item)
-
-    def _create_table_item(self, text, color="#e0e0e0", alignment=Qt.AlignCenter, bold=False, font_size=12):
+    def _create_table_item(self, text, alignment=Qt.AlignCenter):
         item = QTableWidgetItem(str(text))
+        item.setForeground(QColor("#e0e0e0"))
+        item.setFont(QFont("Iosevka Nerd Font", 12))
         item.setTextAlignment(alignment)
-        item.setForeground(QColor(color))
-
-        font = QFont("Iosevka Nerd Font", font_size)
-        font.setBold(bold)
-        item.setFont(font)
-
         item.setFlags(item.flags() ^ Qt.ItemIsEditable)
         return item
 
@@ -1449,7 +1436,6 @@ elif command -v script; then
                 continue
 
         self.activity_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        # self.activity_table.resizeColumnsToContents()
         self.activity_table.viewport().update()
         self.activity_table.setUpdatesEnabled(True)
         self.activity_table.blockSignals(False)
