@@ -699,7 +699,7 @@ elif command -v script; then
 
     def _update_flag_activity(self, activity_data):
         self.flag_table.setRowCount(len(activity_data))
-        for row, entry in enumerate(activity_data[::-1]):
+        for row, entry in enumerate(activity_data):
             user_widget = QWidget()
             user_layout = QHBoxLayout(user_widget)
             user_layout.setContentsMargins(8, 2, 8, 2)
