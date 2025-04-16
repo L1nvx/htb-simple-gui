@@ -693,12 +693,12 @@ elif command -v script; then
         frame_layout.addWidget(preview_label)
 
         self.payload_text = QTextEdit()
-        self.payload_text.setFont(QFont("Consolas", 14))
+        self.payload_text.setFont(QFont("Consolas", 12))
         self.payload_text.setReadOnly(True)
         frame_layout.addWidget(self.payload_text)
 
         copy_btn = QPushButton("📋 Copy Payload")
-        copy_btn.setFont(QFont("Iosevka Nerd Font", 15))
+        copy_btn.setFont(QFont("Iosevka Nerd Font", 12))
         copy_btn.clicked.connect(self._copy_payload)
         frame_layout.addWidget(copy_btn)
 
@@ -884,15 +884,48 @@ elif command -v script; then
 
     def _setup_machine_info(self, layout):
         frame = QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background-color: #1b1f27;
+                border: 1px solid #2a2e36;
+                border-radius: 10px;
+                padding: 12px;
+            }
+            QLabel {
+                color: #e0e0e0;
+            }
+        """)
         grid = QGridLayout(frame)
 
         self.status_labels = {}
         fields = [
-            ("Machine Name:", "name", 0),
             ("IP Address:", "ip", 1),
             ("Type:", "type", 2),
             ("Release:", "expires_at", 3),
         ]
+
+        avatar_name_layout = QHBoxLayout()
+        avatar_name_layout.setContentsMargins(0, 0, 0, 0)
+        avatar_name_layout.setSpacing(10)
+        avatar_name_layout.setAlignment(Qt.AlignLeft)
+
+        # avatar
+        self.avatar_label = QLabel()
+        self.avatar_label.setFixedSize(64, 64)  # más equilibrado
+        self.avatar_label.setStyleSheet("border: none; margin: 0px; padding: 0px; background-color: transparent;")
+        self.avatar_label.setAlignment(Qt.AlignCenter)
+        avatar_name_layout.addWidget(self.avatar_label)
+
+        # nombre de la maquina
+        self.machine_name_label = QLabel("Machine Name")
+        self.machine_name_label.setFont(QFont("Iosevka Nerd Font", 18, QFont.Bold))
+        self.machine_name_label.setStyleSheet("color: #4cc38a;")
+        self.machine_name_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        avatar_name_layout.addWidget(self.machine_name_label)
+
+        # inserto la grilla arriba de todo
+        grid.addLayout(avatar_name_layout, 0, 0, 1, 2)
+
 
         for label, key, row in fields:
             lbl = QLabel(label)
@@ -904,29 +937,42 @@ elif command -v script; then
             grid.addWidget(value, row, 1)
             self.status_labels[key] = value
 
-        avatar_layout = QVBoxLayout()
-        avatar_layout.setSpacing(10)
-        avatar_layout.setAlignment(Qt.AlignCenter)
-
-        self.avatar_label = QLabel()
-        self.avatar_label.setFixedSize(80, 80)
-        self.avatar_label.setAlignment(Qt.AlignCenter)
-        avatar_layout.addWidget(self.avatar_label)
-
         self.copy_ip_btn = QPushButton("📋 Copiar IP")
-        self.copy_ip_btn.setIconSize(QSize(20, 20))
+        self.copy_ip_btn.setFont(QFont("Iosevka Nerd Font", 11))
         self.copy_ip_btn.setFixedWidth(120)
         self.copy_ip_btn.clicked.connect(self._copy_ip)
         self.copy_ip_btn.setEnabled(False)
-        avatar_layout.addWidget(self.copy_ip_btn, 0, Qt.AlignCenter)
 
-        grid.addLayout(avatar_layout, 0, 2, 4, 1)
+        grid.addWidget(self.copy_ip_btn, 4, 0, 1, 2, alignment=Qt.AlignLeft)
+
 
         flag_frame = QFrame()
         flag_layout = QHBoxLayout(flag_frame)
         self.flag_entry = QLineEdit()
         submit_btn = QPushButton("🚩 Submit")
+        self.flag_entry.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e222a;
+                color: #e0e0e0;
+                border: 1px solid #2a2e36;
+                border-radius: 5px;
+                padding: 6px;
+                font-size: 14px;
+            }
+        """)
         submit_btn.clicked.connect(self._submit_flag)
+        submit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2e36;
+                color: #e0e0e0;
+                border-radius: 5px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #4cc38a;
+                color: #0f1117;
+            }
+        """)
         flag_layout.addWidget(self.flag_entry)
         flag_layout.addWidget(submit_btn)
         grid.addWidget(flag_frame, 4, 0, 1, 3)
@@ -1201,8 +1247,18 @@ elif command -v script; then
             self.copy_ip_btn.setEnabled(True)
             if self.status_check_timer:
                 self.status_check_timer.stop()
+        
+        self.machine_name_label.setText(status.get("name", "N/A"))
+                
+        avatar_url = status.get("avatar", "")
+        self.current_machine_data = {
+            "id": status.get("id"),
+            "name": status.get("name"),
+            "avatar": avatar_url
+        }
 
-        self.status_labels["name"].setText(status.get("name", "N/A"))
+        # Change: cargo avatar desde la URL
+        self._load_machine_avatar(avatar_url)
         self.status_labels["type"].setText(status.get("os", "N/A"))
 
         expires = status.get("playInfo", {}).get("expires_at")
@@ -1275,6 +1331,29 @@ elif command -v script; then
             painter.end()
 
             self.avatar_labels[user_id].setPixmap(circular_pixmap)
+
+    def _load_machine_avatar(self, url):
+        if not url:
+            self.avatar_label.clear()
+            return
+
+        request = QNetworkRequest(QUrl(f"https://labs.hackthebox.com{url}"))
+        reply = self.api.nam.get(request)
+
+        def handle_reply():
+            if reply.error() == QNetworkReply.NoError:
+                data = reply.readAll()
+                pixmap = QPixmap()
+                pixmap.loadFromData(data)
+                self.avatar_label.setPixmap(
+                    pixmap.scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                )
+            else:
+                print(f"[!] Error al cargar avatar: {reply.errorString()}")
+            reply.deleteLater()
+
+        reply.finished.connect(handle_reply)
+
 
     def _start_animation(self, text):
         self.animation_text = text
