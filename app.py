@@ -13,27 +13,21 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QLineEdit, QTextEdit, QFrame,
     QScrollArea, QTableWidget, QTableWidgetItem, QAbstractItemView,
     QHeaderView, QTextBrowser, QGridLayout, QToolButton, QSplitter,
-    QMessageBox, QSizePolicy, QStyleFactory
+    QMessageBox, QSizePolicy, QStyleFactory, QFontDialog
 )
 from PySide6.QtGui import (
     QFont, QColor, QPalette, QPixmap, QClipboard, QIcon,
-    QTextCursor, Qt, QImage, QFontDatabase
+    QTextCursor, Qt, QImage, QFontDatabase, QPainter, QPainterPath, QFontMetrics
 )
 from PySide6.QtCore import (
     Qt, QTimer, QSize, QThread, Signal, QObject, QByteArray,
     QUrl, QEventLoop, QBuffer
 )
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PySide6.QtNetwork import QNetworkProxy, QSslConfiguration, QSslSocket
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath, QPixmap, QFontMetrics
-from PySide6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QLabel,
-    QTableWidgetItem,
-    QHeaderView,
+from PySide6.QtNetwork import (
+    QNetworkAccessManager, QNetworkRequest, QNetworkReply,
+    QNetworkProxy, QSslConfiguration, QSslSocket
 )
+
 load_dotenv()
 token = os.getenv("TOKEN")
 if not token:
@@ -424,6 +418,20 @@ class HTBCommander(QMainWindow):
         self._setup_clipboard_monitor()
         self.status_led.setStyleSheet("color: #ff4444;")
 
+    def _apply_font_recursively(self, widget, font):
+        widget.setFont(font)
+        for child in widget.findChildren(QWidget):
+            child.setFont(font)
+
+    
+    def _change_font_size(self, delta):
+        current_font = self.font()
+        new_size = current_font.pointSize() + delta
+        if new_size < 6:
+            new_size = 6
+        current_font.setPointSize(new_size)
+        self._apply_font_recursively(self, current_font)
+
     def _setup_signal_connections(self):
         """Configurar todas las conexiones de señales"""
         self.api.machines_loaded.connect(self._handle_machines_loaded)
@@ -517,6 +525,32 @@ class HTBCommander(QMainWindow):
         self._setup_payload_generator(left_layout)
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 2)
+        
+        font_control_frame = QFrame()
+        font_control_layout = QHBoxLayout(font_control_frame)
+        font_control_layout.setContentsMargins(0, 0, 0, 0)
+
+        font_label = QLabel("Font Size:")
+        font_label.setFont(QFont("Iosevka Nerd Font", 10))
+        font_increase = QPushButton("➕")
+        font_decrease = QPushButton("➖")
+
+        for btn in (font_increase, font_decrease):
+            btn.setFixedWidth(30)
+            btn.setFont(QFont("Iosevka Nerd Font", 11))
+            btn.setCursor(Qt.PointingHandCursor)
+
+        font_increase.clicked.connect(lambda: self._change_font_size(1))
+        font_decrease.clicked.connect(lambda: self._change_font_size(-1))
+
+        font_control_layout.addWidget(font_label)
+        font_control_layout.addWidget(font_decrease)
+        font_control_layout.addWidget(font_increase)
+        font_control_layout.addStretch()
+
+        # Insertar el control en el left_layout al principio
+        left_panel.layout().insertWidget(0, font_control_frame)
+
 
     def _setup_machine_control(self, layout):
         frame = QFrame()
