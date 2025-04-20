@@ -423,7 +423,6 @@ class HTBCommander(QMainWindow):
         for child in widget.findChildren(QWidget):
             child.setFont(font)
 
-    
     def _change_font_size(self, delta):
         current_font = self.font()
         new_size = current_font.pointSize() + delta
@@ -451,7 +450,7 @@ class HTBCommander(QMainWindow):
         QTimer.singleShot(0, self._update_release_timer)
         self.flag_activity_timer = QTimer()
         self.flag_activity_timer.timeout.connect(self._refresh_flag_activity)
-        self.flag_activity_timer.start(10000)
+        self.flag_activity_timer.start(30000)
         self.status_check_timer = QTimer()
         self.status_check_timer.timeout.connect(self._check_machine_status)
         self.status_check_attempts = 0
@@ -525,7 +524,7 @@ class HTBCommander(QMainWindow):
         self._setup_payload_generator(left_layout)
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 2)
-        
+
         font_control_frame = QFrame()
         font_control_layout = QHBoxLayout(font_control_frame)
         font_control_layout.setContentsMargins(0, 0, 0, 0)
@@ -548,9 +547,7 @@ class HTBCommander(QMainWindow):
         font_control_layout.addWidget(font_increase)
         font_control_layout.addStretch()
 
-        # Insertar el control en el left_layout al principio
         left_panel.layout().insertWidget(0, font_control_frame)
-
 
     def _setup_machine_control(self, layout):
         frame = QFrame()
@@ -808,10 +805,24 @@ elif command -v script; then
     def _handle_reset_result(self, response):
         if response["success"]:
             self._log_to_console("Machine successfully restarted")
-            self._check_status()
+            self.reset_check_attempts = 0
+            self.reset_check_timer = QTimer()
+            self.reset_check_timer.timeout.connect(self._check_reset_status)
+            self.reset_check_timer.start(5000)
+            self._start_animation("Waiting for IP")
         else:
             self._log_to_console(
-                f"Error when restarting: {response.get('error', 'Unknown error')}", error=True)
+                f"Reset error: {response.get('error', 'Unknown error')}", error=True)
+
+    def _check_reset_status(self):
+        if self.reset_check_attempts >= 12:
+            self.reset_check_timer.stop()
+            self._stop_animation()
+            self._log_to_console("Timeout waiting for new IP", error=True)
+            return
+        self.reset_check_attempts += 1
+        if self.current_machine_id:
+            self.api.get_machine_info(self.current_machine_id)
 
     def _handle_submit_result(self, response):
         if response["success"]:
@@ -1140,6 +1151,14 @@ elif command -v script; then
 
     def _update_status_labels(self, status):
         ip = status.get("ip", "N/A")
+        previous_ip = self.status_labels["ip"].text()
+
+        if ip != previous_ip and ip != "N/A":
+            if hasattr(self, 'reset_check_timer') and self.reset_check_timer.isActive():
+                self.reset_check_timer.stop()
+                self._stop_animation()
+                self._log_to_console(f"New IP detected: {ip}")
+
         self.status_labels["ip"].setText(ip)
         if ip not in ["N/A", "null", "", None]:
             self._stop_animation()
@@ -1286,7 +1305,7 @@ elif command -v script; then
             if selected:
                 machine_id = self.machine_dict[selected]["id"]
                 self._fetch_activity_data(machine_id)
-            QTimer.singleShot(25000, self._update_activity)
+            QTimer.singleShot(60000, self._update_activity)
         except Exception as e:
             self._log_to_console(f"Activity error: {str(e)}", error=True)
 
