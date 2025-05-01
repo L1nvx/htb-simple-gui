@@ -4,6 +4,7 @@ import base64
 import netifaces
 from datetime import datetime, timezone
 from urllib.parse import quote, urljoin
+from collections import deque
 from dotenv import load_dotenv
 from functools import partial
 from html import escape
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QLineEdit, QTextEdit, QFrame,
     QScrollArea, QTableWidget, QTableWidgetItem, QAbstractItemView,
     QHeaderView, QTextBrowser, QGridLayout, QToolButton, QSplitter,
-    QMessageBox, QSizePolicy, QStyleFactory, QFontDialog
+    QMessageBox, QSizePolicy, QStyleFactory, QFontDialog, QStyle
 )
 from PySide6.QtGui import (
     QFont, QColor, QPalette, QPixmap, QClipboard, QIcon,
@@ -87,8 +88,29 @@ class HTBApiClient(QObject):
             "User-Agent": "HTBCommander/1.0",
             "Accept": "application/json",
         }
+        self.avatar_cache = {}
+        self.pending_avatars = deque()
+        self.active_requests = 0
+        self.max_concurrent = 2
+        self.retry_count = {}
 
     def get_avatar(self, user_id, avatar_path):
+        if user_id in self.avatar_cache:
+            self.avatar_loaded.emit(user_id, self.avatar_cache[user_id])
+            return
+
+        self.pending_avatars.append((user_id, avatar_path))
+        self._process_queue()
+
+    def _process_queue(self):
+        while self.active_requests < self.max_concurrent and self.pending_avatars:
+            user_id, avatar_path = self.pending_avatars.popleft()
+            self._real_get_avatar(user_id, avatar_path)
+            self.active_requests += 1
+
+    def _real_get_avatar(self, user_id, avatar_path):
+        if not avatar_path.startswith("/"):
+            avatar_path = "/" + avatar_path
         url = f"https://labs.hackthebox.com{avatar_path}"
         request = QNetworkRequest(QUrl(url))
         self._configure_request(request)
@@ -100,7 +122,15 @@ class HTBApiClient(QObject):
         user_id = reply.user_id
         if reply.error() == QNetworkReply.NoError:
             data = reply.readAll()
+            self.avatar_cache[user_id] = data
             self.avatar_loaded.emit(user_id, data)
+        else:
+            self.retry_count[user_id] = self.retry_count.get(user_id, 0) + 1
+            if self.retry_count[user_id] < 3:
+                self.pending_avatars.append((user_id, reply.url().path()))
+
+        self.active_requests -= 1
+        self._process_queue()
         reply.deleteLater()
 
     def get_flag_activity(self, machine_id):
@@ -410,6 +440,7 @@ class HTBCommander(QMainWindow):
         self.last_flag = ""
         self.animation_timer = None
         self.avatar_labels = {}
+        self.flag_avatars = {}
         self._setup_signal_connections()
         self._setup_palette()
         self._setup_ui()
@@ -730,19 +761,32 @@ elif command -v script; then
 
     def _update_flag_activity(self, activity_data):
         self.flag_table.setRowCount(len(activity_data))
+        self.flag_avatars.clear()
+
         for row, entry in enumerate(activity_data):
             user_widget = QWidget()
             user_layout = QHBoxLayout(user_widget)
             user_layout.setContentsMargins(8, 2, 8, 2)
             user_layout.setSpacing(10)
             user_layout.setAlignment(Qt.AlignVCenter)
+
             avatar_label = QLabel()
             avatar_label.setFixedSize(40, 40)
             avatar_label.setAlignment(Qt.AlignCenter)
-            self.avatar_labels[entry["user_id"]] = avatar_label
-            if entry.get("user_avatar"):
-                self.api.get_avatar(entry["user_id"], entry["user_avatar"])
-            name_label = QLabel(entry["user_name"])
+            avatar_label.setStyleSheet("""
+                QLabel {
+                    background: transparent;
+                    border: none;
+                }
+            """)
+
+            user_id = entry.get("user_id")
+            if user_id:
+                self.flag_avatars[user_id] = avatar_label
+                if entry.get("user_avatar"):
+                    self.api.get_avatar(user_id, entry["user_avatar"])
+
+            name_label = QLabel(entry.get("user_name", "N/A"))
             name_label.setStyleSheet("""
                 QLabel {
                     color: #e0e0e0;
@@ -752,47 +796,67 @@ elif command -v script; then
             """)
             name_label.setSizePolicy(
                 QSizePolicy.Expanding, QSizePolicy.Preferred)
+
             user_layout.addWidget(avatar_label)
             user_layout.addWidget(name_label)
             user_layout.addStretch()
-            if entry.get("blood_type") == "root":
+
+            blood_type = entry.get("blood_type")
+            if blood_type == "root":
                 flag_type = "🩸 Root"
-            elif entry.get("blood_type") == "user":
+            elif blood_type == "user":
                 flag_type = "🩸 User"
             else:
                 flag_type = entry.get("type", "N/A")
+
             try:
                 dt = datetime.strptime(
                     entry["created_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
                 time_str = dt.strftime("%H:%M")
             except:
                 time_str = "N/A"
+
             self.flag_table.setCellWidget(row, 0, user_widget)
             self.flag_table.setItem(row, 1, self._create_table_item(flag_type))
             self.flag_table.setItem(row, 2, self._create_table_item(time_str))
+
         self.flag_table.verticalHeader().setDefaultSectionSize(40)
         self.flag_table.resizeRowsToContents()
 
     def _handle_avatar_loaded(self, user_id, image_data):
-        if user_id in self.avatar_labels:
-            pixmap = QPixmap()
-            if not pixmap.loadFromData(image_data):
-                print(f"[!] Falló al cargar avatar de {user_id}")
-                return
-            target_size = 40
-            scaled_pix = pixmap.scaled(
-                target_size, target_size,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-            final_pixmap = QPixmap(target_size, target_size)
-            final_pixmap.fill(Qt.transparent)
-            painter = QPainter(final_pixmap)
-            x_offset = (target_size - scaled_pix.width()) // 2
-            y_offset = (target_size - scaled_pix.height()) // 2
-            painter.drawPixmap(x_offset, y_offset, scaled_pix)
-            painter.end()
-            self.avatar_labels[user_id].setPixmap(final_pixmap)
+        for avatar_dict in [self.avatar_labels, self.flag_avatars]:
+            if user_id in avatar_dict:
+                pixmap = QPixmap()
+                if not pixmap.loadFromData(image_data):
+                    fallback_icon = QApplication.style().standardIcon(QStyle.SP_MessageBoxWarning)
+                    avatar_dict[user_id].setPixmap(
+                        fallback_icon.pixmap(40, 40))
+                    continue
+
+                target_size = 40
+                circular_pixmap = QPixmap(target_size, target_size)
+                circular_pixmap.fill(Qt.transparent)
+
+                painter = QPainter(circular_pixmap)
+                painter.setRenderHints(
+                    QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+
+                painter.setBrush(QColor(255, 255, 255))
+                painter.drawEllipse(0, 0, target_size, target_size)
+
+                scaled = pixmap.scaled(
+                    target_size, target_size,
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.SmoothTransformation
+                )
+
+                path = QPainterPath()
+                path.addEllipse(0, 0, target_size, target_size)
+                painter.setClipPath(path)
+                painter.drawPixmap(0, 0, scaled)
+
+                painter.end()
+                avatar_dict[user_id].setPixmap(circular_pixmap)
 
     def _create_table_item(self, text, alignment=Qt.AlignCenter):
         item = QTableWidgetItem(str(text))
