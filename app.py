@@ -39,13 +39,6 @@ headers = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json, text/plain, */*",
 }
-list_machines_url = "https://labs.hackthebox.com/api/v4/season/machines"
-activate_machine_url = "https://labs.hackthebox.com/api/v4/vm/spawn"
-status_machine_url = "https://labs.hackthebox.com/api/v4/machine/profile"
-stop_machine_url = "https://labs.hackthebox.com/api/v4/vm/terminate"
-submit_flag_url = "https://labs.hackthebox.com/api/v4/machine/own"
-reset_machine_url = "https://labs.hackthebox.com/api/v4/vm/reset"
-activity_url = "https://labs.hackthebox.com/api/v4/machine/owns/top"
 
 
 def get_tun0_ip():
@@ -348,7 +341,7 @@ class HTBApiClient(QObject):
             reply.deleteLater()
 
     def list_machines(self):
-        url = QUrl(f"{self.base_url}/machine/paginated")
+        url = QUrl(f"{self.base_url}/season/machines")
         request = QNetworkRequest(url)
         self._configure_request(request)
         reply = self.nam.get(request)
@@ -1162,14 +1155,21 @@ elif command -v script; then
 
     def _handle_machines_loaded(self, machines):
         try:
-            self.machine_dict = {m["name"]: m for m in machines}
+            valid_machines = [
+                m for m in machines if not m.get("unknown", False)]
+
+            self.machine_dict = {m["name"]: m for m in valid_machines}
             self.machine_combo.clear()
-            self.machine_combo.addItems(self.machine_dict.keys())
-            if self.machine_combo.count() > 0:
-                self.machine_combo.setCurrentIndex(0)
+
+            if valid_machines:
+                self.machine_combo.addItems(self.machine_dict.keys())
                 self._on_machine_selected(0)
+            else:
+                self._log_to_console("No hay máquinas disponibles", error=True)
+
             self.payload_ip.setText(get_tun0_ip())
-            self._log_to_console(f"Loaded {len(machines)} machines")
+            self._log_to_console(f"Loaded {len(valid_machines)} machines")
+
         except Exception as e:
             self._log_to_console(
                 f"Error loading machines: {str(e)}", error=True)
